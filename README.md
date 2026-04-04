@@ -1,6 +1,25 @@
 # Parking Netty Framework
 
-停车场 Netty 通信框架 - 简化的云云对接框架
+停车场 Netty 通信框架 - 基于 Netty 的高性能停车场通信中间件
+
+## 快速导航
+
+| 文档 | 说明 |
+|------|------|
+| [开发指南](docs/DEVELOPMENT.md) | 开发环境配置、日常开发流程、代码规范 |
+| [测试体系](docs/TESTING.md) | 单元测试、集成测试、Docker 测试、Git Hooks |
+| [Docker 部署](docs/DOCKER_DEPLOYMENT.md) | 容器化部署、负载均衡、扩缩容 |
+
+## 核心特性
+
+- **高性能 TCP 服务器** - Netty 4.1.108.Final，支持万级并发连接
+- **Protobuf 序列化** - Google Protobuf 3.25.3，高效二进制序列化
+- **完整认证机制** - Serial/Secret 双向认证，支持 Redis/数据库存储
+- **心跳检测** - 空闲连接自动断开，资源高效利用
+- **消息自动分派** - 基于消息类型的 Handler 路由机制
+- **分层测试体系** - 快速测试 → 完整测试 → Docker 测试
+- **代码质量保障** - JaCoCo 覆盖率 + Checkstyle 代码风格检查
+- **Git Hooks** - 提交前自动测试，防止问题代码入库
 
 ## 项目结构
 
@@ -49,14 +68,17 @@ parking-netty-framework/
 │   ├── model/
 │   ├── netty/
 │   └── task/
-├── build.gradle
-├── settings.gradle
-├── test-client.sh                      # 测试客户端脚本
-└── scripts/
-    ├── start.sh                        # 启动服务器脚本
-    ├── stop.sh                         # 停止服务器脚本
-    ├── scale-up.sh                     # 扩容脚本
-    └── scale-down.sh                   # 缩容脚本
+├── scripts/
+│   ├── start.sh                        # 启动服务器脚本
+│   ├── stop.sh                         # 停止服务器脚本
+│   ├── build-docker.sh                 # Docker 镜像构建
+│   ├── test-all.sh                     # 完整测试套件
+│   ├── docker-test.sh                  # Docker 健康检查
+│   └── install-hooks.sh                # Git Hooks 安装
+├── docker-compose.yml                  # Docker Compose 配置
+├── Dockerfile                          # Docker 镜像构建
+├── build.gradle                        # Gradle 构建配置
+└── README.md                           # 本文档
 ```
 
 ## 核心特性
@@ -73,7 +95,13 @@ parking-netty-framework/
 
 ## 快速开始
 
-### 1. 启动服务器
+### 1. 环境要求
+
+- JDK 21 (Alibaba Dragonwell 21.0.10)
+- Gradle 8.5
+- Docker 20+ (可选，用于容器化部署)
+
+### 2. 启动服务器
 
 ```bash
 # 方式一：使用 Gradle
@@ -87,21 +115,46 @@ parking-netty-framework/
 - HTTP 端口：8080 (Spring Boot Actuator)
 - TCP 端口：8889 (Netty)
 
-### 2. 运行测试客户端
+### 3. 运行测试
 
 ```bash
-# 方式一：使用 Gradle
-./gradlew runClient \
-    -Pclient.host=localhost \
-    -Pclient.port=8889 \
-    -Pclient.serial=TEST-001 \
-    -Pclient.secret=test-secret
+# 快速测试（开发中随时运行）
+./gradlew test
 
-# 方式二：使用客户端脚本
-./test-client.sh localhost 8889 TEST-001 test-secret
+# 完整测试套件（提交前运行）
+./scripts/test-all.sh
+
+# 查看测试报告
+open build/reports/tests/test/index.html
 ```
 
-### 3. 验证连接
+### 4. 运行测试客户端
+
+```bash
+# 使用 Gradle
+./gradlew runClient \
+    -PclientHost=localhost \
+    -PclientPort=8889 \
+    -PclientSerial=TEST-001 \
+    -PclientSecret=test-secret
+```
+
+### 5. Docker 部署
+
+```bash
+# 构建并启动
+./scripts/start.sh
+
+# 查看状态
+docker compose ps
+
+# 查看日志
+docker compose logs -f
+```
+
+详细部署文档：[docs/DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md)
+
+## 验证连接
 
 客户端成功连接后，会依次发送：
 1. 认证消息 (TYPE_AUTHENTICATE)
@@ -121,6 +174,37 @@ SpaceHandler 接收车位上报，parkCode: PARK001, 总车位：100, 剩余车�
 
 CarInHandler 接收车辆入场，parkCode: PARK001, 车牌：陕 A12345, 通道：ENTRANCE-01
 ```
+
+## 测试体系
+
+本项目提供分层测试策略，确保代码质量：
+
+| 测试层级 | 命令 | 执行时间 | 用途 |
+|----------|------|----------|------|
+| 快速测试 | `./gradlew test` | ~5 秒 | 开发中随时运行 |
+| 完整测试 | `./scripts/test-all.sh` | ~30 秒 | 提交前验证 |
+| Docker 测试 | `./scripts/docker-test.sh` | ~60 秒 | 部署前验证 |
+
+### 测试覆盖
+
+- **单元测试**: RespondProtoTest, HandlerRegistryTest, ChannelMaintainerTest, OperationResultFutureTest
+- **Handler 测试**: SpaceHandlerTest, CarInHandlerTest, CarOutHandlerTest, DemoHandlerTest
+- **集成测试**: AuthIntegrationTest
+
+### 代码质量
+
+- **JaCoCo**: 代码覆盖率报告 (`build/reports/jacoco/test/html/index.html`)
+- **Checkstyle**: 代码风格检查 (`build/reports/checkstyle/main.html`)
+
+### Git Hooks
+
+安装 pre-commit hook，提交前自动运行测试：
+
+```bash
+./scripts/install-hooks.sh
+```
+
+详细测试文档：[docs/TESTING.md](docs/TESTING.md)
 
 ## 添加自定义 Handler
 
@@ -144,6 +228,8 @@ public class MyHandler implements Handler {
 ```
 
 2. Spring 会自动通过 `HandlerRegistry` 注册到消息分派器
+
+详细开发指南：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 
 ## Protobuf 编译
 
@@ -290,13 +376,15 @@ open build/reports/tests/test/index.html
 
 ## 依赖
 
-- Spring Boot 3.2.4
-- Spring Framework 6.x
-- JDK 21
-- Netty 4.1.108.Final
-- Protobuf 3.25.3
-- Lombok (注解工具)
-- JUnit 5 (测试)
+| 依赖 | 版本 |
+|------|------|
+| Spring Boot | 3.2.4 |
+| Spring Framework | 6.x |
+| JDK | 21 (Alibaba Dragonwell 21.0.10) |
+| Netty | 4.1.108.Final |
+| Protobuf | 3.25.3 |
+| Lombok | - |
+| JUnit | 5 |
 
 ## 故障排查
 
@@ -317,6 +405,8 @@ open build/reports/tests/test/index.html
 1. 检查 Handler 是否正确注册到 Spring 容器
 2. 确认 `processedType()` 返回的消息类型正确
 3. 查看 DispatcherHandler 日志
+
+详细故障排查：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 
 ## 扩展建议
 
