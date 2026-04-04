@@ -3,6 +3,8 @@ plugins {
     id 'io.spring.dependency-management' version '1.1.4'
     id 'java-library'
     id 'com.google.protobuf' version '0.9.4'
+    id 'jacoco'
+    id 'checkstyle'
 }
 
 group = 'cn.tnar.parking'
@@ -62,6 +64,11 @@ protobuf {
 
 test {
     useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+    }
+    finalizedBy jacocoTestReport
 }
 
 task runClient(type: JavaExec) {
@@ -82,4 +89,23 @@ bootJar {
 
 jar {
     enabled = true
+}
+
+// JaCoCo 配置
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+// Checkstyle 配置
+checkstyle {
+    toolVersion = "10.12.5"
+    configFile = file("${rootDir}/checkstyle.xml")
 }

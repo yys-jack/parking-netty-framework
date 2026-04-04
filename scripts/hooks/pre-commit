@@ -1,0 +1,12 @@
+#!/bin/bash
+
+echo "Running pre-commit tests..."
+
+# 快速测试
+./gradlew test --quiet || {
+    echo "❌ Tests failed! Commit aborted."
+    exit 1
+}
+
+echo "✅ Pre-commit tests passed!"
+exit 0
