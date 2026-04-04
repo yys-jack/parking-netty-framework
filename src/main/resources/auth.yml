@@ -1,0 +1,8 @@
+auth:
+  entries:
+    - serial: TEST-001
+      parkCode: PARK001
+      secret: test-secret
+    - serial: PROD-002
+      parkCode: PARK002
+      secret: prod-secret-xyz

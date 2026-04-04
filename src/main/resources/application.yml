@@ -1,0 +1,27 @@
+spring:
+  config:
+    import: auth.yml
+
+server:
+  port: 8080
+
+netty:
+  tcp:
+    port: 8889
+    # 认证超时时间（秒）
+    auth-timeout: 10
+    # 心跳间隔（秒）
+    heartbeat-interval: 90
+    #  backlog 大小
+    backlog: 128
+
+logging:
+  level:
+    cn.tnar.parking: DEBUG
+    io.netty: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

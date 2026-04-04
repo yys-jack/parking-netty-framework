@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package cn.tnar.parking.proto;
+
+option java_multiple_files = true;
+option java_package = 'cn.tnar.parking.model';
+
+/**
+ * 传输控制消息，所有基本业务消息的包装
+ */
+message Transmission{
+  enum MessageType{
+    TYPE_NOT_USED       = 0; //不使用默认 0
+
+    /**
+     * 通用消息
+     **/
+    TYPE_RESPOND        = 1; //通用响应消息
+    TYPE_AUTHENTICATE   = 2; //场端认证消息
+
+    /**
+     * 演示消息类型
+     **/
+    TYPE_DEMO           = 100; //演示消息
+
+    /**
+     * 上报消息
+     **/
+    TYPE_SPACE          = 3; //车位上报兼心跳
+    TYPE_CAR_IN         = 5; //车辆入场
+    TYPE_CAR_OUT        = 6; //车辆出场
+  }
+
+  fixed32     ID      = 1; //消息 ID, 请求/响应根据此字段对应
+  MessageType type    = 2; //消息类型
+  bytes       message = 3; //具体消息序列化后的字节
+}
+
+/**
+ * 通用响应消息
+ */
+message Respond{
+  enum RespondCode{
+    CODE_NOT_USED      = 0; //不使用默认 0
+    CODE_SUCCESS       = 1; //成功
+    CODE_FAILURE       = 2; //失败
+    CODE_DUPLICATE     = 3; //重复
+    CODE_MISMATCH      = 4; //外部引用不存在
+    CODE_NOT_SUPPORTED = 5; //暂不支持的功能
+    CODE_OFFLINE       = 6; //云端内部使用
+    CODE_TIMEOUT       = 7; //超时
+  }
+
+  RespondCode code    = 1; //响应码
+  bytes       message = 2; //响应消息
+}
+
+/**
+ * 场端认证消息
+ */
+message Authenticate{
+  string serial = 1; //接入序列号
+  string secret = 2; //接入安全码
+}
+
+/**
+ * 车位上报
+ */
+message Space{
+  fixed32 total    = 1; //总车位
+  fixed32 remained = 2; //剩余车位
+}
+
+/**
+ * 车辆入场消息
+ */
+message CarIn{
+  string plate_no   = 1; // 车牌号
+  fixed64 in_time   = 2; // 入场时间戳
+  string channel    = 3; // 入场通道
+}
+
+/**
+ * 车辆出场消息
+ */
+message CarOut{
+  string plate_no   = 1; // 车牌号
+  fixed64 out_time  = 2; // 出场时间戳
+  string channel    = 3; // 出场通道
+  fixed64 duration  = 4; // 停车时长 (秒)
+}

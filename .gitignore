@@ -1,0 +1,29 @@
+# Docker
+logs/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Build
+build/
+.gradle/
+
+# Logs
+*.log
+
+# JDK directory
+dragonwell-21/
+
+# Compiled Java classes
+*.class
+target/
+
+# Gradle
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# OS
+.DS_Store
+Thumbs.db

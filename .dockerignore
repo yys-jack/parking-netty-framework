@@ -1,0 +1,11 @@
+build/
+!build/libs/
+*.log
+.git/
+.idea/
+*.md
+logs/
+dragonwell-21/man/
+dragonwell-21/legal/
+dragonwell-21/NOTICE*
+dragonwell-21/THIRDPARTY*

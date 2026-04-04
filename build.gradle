@@ -1,0 +1,85 @@
+plugins {
+    id 'org.springframework.boot' version '3.2.4'
+    id 'io.spring.dependency-management' version '1.1.4'
+    id 'java-library'
+    id 'com.google.protobuf' version '0.9.4'
+}
+
+group = 'cn.tnar.parking'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    maven { url 'https://maven.aliyun.com/repository/public/' }
+    mavenCentral()
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+dependencies {
+    // Spring Boot
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // Netty
+    implementation 'io.netty:netty-all:4.1.108.Final'
+
+    // Protobuf
+    implementation 'com.google.protobuf:protobuf-java:3.25.3'
+    implementation 'com.google.protobuf:protobuf-java-util:3.25.3'
+    implementation 'com.hubspot.jackson:jackson-datatype-protobuf:0.9.14'
+
+
+    // Utils
+    implementation 'cn.hutool:hutool-all:5.8.20'
+    implementation 'org.apache.commons:commons-lang3:3.12.0'
+    implementation 'com.alibaba:fastjson:1.2.83'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
+
+    // Test
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+protobuf {
+    protoc {
+        artifact = 'com.google.protobuf:protoc:3.25.3'
+    }
+}
+
+test {
+    useJUnitPlatform()
+}
+
+task runClient(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'cn.tnar.parking.client.NettyClient'
+    args = []
+    systemProperties = [
+        'client.host': project.hasProperty('clientHost') ? project.property('clientHost') : 'localhost',
+        'client.port': project.hasProperty('clientPort') ? project.property('clientPort') : '8889',
+        'client.serial': project.hasProperty('clientSerial') ? project.property('clientSerial') : 'TEST-001',
+        'client.secret': project.hasProperty('clientSecret') ? project.property('clientSecret') : 'test-secret'
+    ]
+}
+
+bootJar {
+    enabled = true
+}
+
+jar {
+    enabled = true
+}

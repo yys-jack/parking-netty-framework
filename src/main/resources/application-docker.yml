@@ -1,0 +1,22 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+netty:
+  tcp:
+    port: ${NETTY_TCP_PORT:8889}
+    auth-timeout: 10
+    heartbeat-interval: 90
+    backlog: 128
+
+logging:
+  level:
+    cn.tnar.parking: INFO
+    io.netty: WARN
+  file:
+    name: /app/logs/application.log
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

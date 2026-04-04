@@ -1,0 +1,91 @@
+package cn.tnar.parking.integration;
+
+import cn.tnar.parking.config.AuthProperties;
+import cn.tnar.parking.model.Authenticate;
+import cn.tnar.parking.model.Respond;
+import cn.tnar.parking.model.RespondProto;
+import cn.tnar.parking.model.Transmission;
+import cn.tnar.parking.netty.handler.AuthHandler;
+import cn.tnar.parking.netty.handler.DispatcherHandler;
+import cn.tnar.parking.repository.auth.AuthRepository;
+import cn.tnar.parking.repository.auth.InMemoryAuthRepository;
+import cn.tnar.parking.task.HandlerRegistry;
+import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.handler.timeout.IdleStateHandler;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Collections;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * 认证集成测试
+ */
+@ExtendWith(MockitoExtension.class)
+class AuthIntegrationTest {
+
+    @Mock
+    private HandlerRegistry handlerRegistry;
+
+    private AuthRepository authRepository;
+    private AuthHandler authHandler;
+    private DispatcherHandler dispatcherHandler;
+
+    @BeforeEach
+    void setUp() {
+        // 创建测试用认证配置
+        AuthProperties properties = new AuthProperties();
+        AuthProperties.AuthEntry entry = new AuthProperties.AuthEntry();
+        entry.setSerial("TEST-001");
+        entry.setParkCode("PARK001");
+        entry.setSecret("test-secret");
+        properties.getEntries().add(entry);
+
+        authRepository = new InMemoryAuthRepository(properties);
+        authHandler = new AuthHandler(authRepository);
+        dispatcherHandler = new DispatcherHandler(handlerRegistry);
+    }
+
+    @Test
+    void testValidate_Success() {
+        // When & Then
+        assertTrue(authRepository.validate("TEST-001", "test-secret"));
+    }
+
+    @Test
+    void testValidate_Failure_WrongSecret() {
+        // When & Then
+        assertFalse(authRepository.validate("TEST-001", "wrong-secret"));
+    }
+
+    @Test
+    void testValidate_Failure_UnknownSerial() {
+        // When & Then
+        assertFalse(authRepository.validate("UNKNOWN-001", "test-secret"));
+    }
+
+    @Test
+    void testFindBySerial_Success() {
+        // When
+        java.util.Optional<cn.tnar.parking.repository.auth.AuthInfo> authInfo = authRepository.findBySerial("TEST-001");
+
+        // Then
+        assertTrue(authInfo.isPresent());
+        assertEquals("PARK001", authInfo.get().getParkCode());
+        assertEquals("test-secret", authInfo.get().getSecret());
+    }
+
+    @Test
+    void testFindBySerial_Failure() {
+        // When
+        java.util.Optional<cn.tnar.parking.repository.auth.AuthInfo> authInfo = authRepository.findBySerial("UNKNOWN-001");
+
+        // Then
+        assertFalse(authInfo.isPresent());
+    }
+}
