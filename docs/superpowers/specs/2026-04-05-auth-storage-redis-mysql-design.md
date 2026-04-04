@@ -187,6 +187,39 @@ public interface ReactiveAuthRepository {
 - `RedisAuthRepository`: 新增 Redis 响应式实现
 - `JdbcAuthRepository`: 新增数据库实现（阻塞式，需隔离线程）
 
+### 3.4.1 InMemoryAuthRepository 设计（响应式包装）
+
+```java
+@Component
+@ConditionalOnProperty(prefix = "auth.storage", name = "type", havingValue = "in-memory", matchIfMissing = true)
+public class InMemoryAuthRepository implements ReactiveAuthRepository {
+    
+    private final Map<String, AuthInfo> authInfoMap;
+    
+    public InMemoryAuthRepository(AuthProperties properties) {
+        this.authInfoMap = properties.getEntries().stream()
+            .map(entry -> new AuthInfo(entry.getSerial(), entry.getParkCode(), entry.getSecret()))
+            .collect(Collectors.toMap(AuthInfo::getSerial, Function.identity()));
+    }
+    
+    @Override
+    public Mono<AuthInfo> findBySerial(String serial) {
+        return Mono.justOrEmpty(authInfoMap.get(serial));
+    }
+    
+    @Override
+    public Mono<Boolean> validate(String serial, String secret) {
+        return findBySerial(serial)
+            .map(info -> info.getSecret().equals(secret));
+    }
+}
+```
+
+**改造要点**：
+- 使用 `Mono.justOrEmpty()` 包装内存查询结果
+- 保持现有构造函数逻辑不变
+- 响应式方法不调用 `subscribe()`，由调用方决定何时订阅
+
 ### 3.5 RedisAuthRepository 设计（响应式）
 
 ```java
