@@ -20,7 +20,7 @@
 
 1. 不支持运行时数据库到 Redis 的自动同步（刷新通过手动 API 触发）
 2. 不涉及认证协议本身的修改
-3. 不修改现有的 AuthHandler 认证逻辑（仅更换存储实现）
+3. 不修改现有的 HTTP 端口和 Actuator 配置
 
 ## 2. 架构设计
 
@@ -39,11 +39,11 @@
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│                     认证查询流程                             │
+│                     认证查询流程（响应式）                    │
 ├─────────────────────────────────────────────────────────────┤
-│  type=in-memory → 查内存 Map                                │
-│  type=redis     → 查 Redis Hash                            │
-│  type=jdbc      → 查数据库 SELECT                           │
+│  type=in-memory → Mono.just(map.get(serial))               │
+│  type=redis     → ReactiveRedisTemplate.opsForHash()       │
+│  type=jdbc      → 查数据库 SELECT（阻塞，需隔离线程）        │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
@@ -63,9 +63,9 @@
 │                        Spring Context                        │
 ├──────────────────────────────────────────────────────────────┤
 │  ┌────────────────────────────────────────────────────────┐ │
-│  │  AuthRepository (接口)                                  │ │
-│  │  - Optional<AuthInfo> findBySerial(String serial)      │ │
-│  │  - boolean validate(String serial, String secret)      │ │
+│  │  ReactiveAuthRepository (接口)                          │ │
+│  │  - Mono<AuthInfo> findBySerial(String serial)          │ │
+│  │  - Mono<Boolean> validate(String serial, String secret)│ │
 │  └────────────────────────────────────────────────────────┘ │
 │                           ↑                                  │
 │         ┌─────────────────┼─────────────────┐               │
@@ -73,7 +73,7 @@
 │  ┌──────┴──────┐   ┌──────┴──────┐  ┌──────┴──────┐        │
 │  │ InMemory    │   │  Redis      │  │  Jdbc       │        │
 │  │ AuthRepo    │   │  AuthRepo   │  │  AuthRepo   │        │
-│  │ (现有)      │   │  (新增)     │  │  (新增)     │        │
+│  │ (现有改造)   │   │  (新增)     │  │  (新增)     │        │
 │  └─────────────┘   └─────────────┘  └─────────────┘        │
 │                                                              │
 │  ┌────────────────────────────────────────────────────────┐ │
@@ -86,12 +86,17 @@
 │                                                              │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │  AuthRefresher (新增服务)                               │ │
-│  │  - int refreshFromDatabaseToRedis()                    │ │
+│  │  - Mono<Integer> refreshFromDatabaseToRedis()          │ │
 │  └────────────────────────────────────────────────────────┘ │
 │                                                              │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │  AuthRefreshController (新增 REST Controller)          │ │
 │  │  - POST /api/auth/refresh                              │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  AuthHandler (改造为响应式处理)                         │ │
+│  │  - 使用 Mono.flatMap() 链式调用认证逻辑                │ │
 │  └────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -160,78 +165,150 @@ HGETALL parking:auth:TEST-001
 
 ### 3.4 仓库接口设计
 
-保持现有 `AuthRepository` 接口不变：
+改为响应式接口：
 
 ```java
-public interface AuthRepository {
-    Optional<AuthInfo> findBySerial(String serial);
-    boolean validate(String serial, String secret);
+public interface ReactiveAuthRepository {
+    /**
+     * 根据序列号获取认证信息（响应式）
+     */
+    Mono<AuthInfo> findBySerial(String serial);
+
+    /**
+     * 验证认证信息（响应式）
+     */
+    Mono<Boolean> validate(String serial, String secret);
 }
 ```
 
-通过 Spring 的 `@ConditionalOnProperty` 或 `@Profile` 决定激活哪个实现：
+通过 Spring 的 `@ConditionalOnProperty` 决定激活哪个实现：
 
-- `InMemoryAuthRepository`: 现有实现，标记为 `@ConditionalOnProperty(prefix="auth.storage", name="type", havingValue="in-memory")`
-- `RedisAuthRepository`: 新增 Redis 实现
-- `JdbcAuthRepository`: 新增数据库实现
+- `InMemoryAuthRepository`: 现有实现改造，返回 `Mono.just()`
+- `RedisAuthRepository`: 新增 Redis 响应式实现
+- `JdbcAuthRepository`: 新增数据库实现（阻塞式，需隔离线程）
 
-### 3.5 RedisAuthRepository 设计
+### 3.5 RedisAuthRepository 设计（响应式）
 
 ```java
 @Component
 @ConditionalOnProperty(prefix = "auth.storage", name = "type", havingValue = "redis")
-public class RedisAuthRepository implements AuthRepository {
+public class RedisAuthRepository implements ReactiveAuthRepository {
     
-    private final RedisTemplate<String, String> redisTemplate;
+    private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final String keyPrefix;
     
-    // findBySerial: HGETALL {key-prefix}{serial}
-    // validate: HGET {key-prefix}{serial} secret 比较
+    @Override
+    public Mono<AuthInfo> findBySerial(String serial) {
+        String key = keyPrefix + serial;
+        return redisTemplate
+            .opsForHash()
+            .multiGet(key, Arrays.asList("parkCode", "secret"))
+            .map(values -> {
+                if (values == null || values.isEmpty()) {
+                    return null;
+                }
+                return new AuthInfo(serial, values.get(0), values.get(1));
+            });
+    }
     
-    // @PostConstruct 时从数据库加载数据到 Redis
+    @Override
+    public Mono<Boolean> validate(String serial, String secret) {
+        return findBySerial(serial)
+            .map(info -> info != null && info.getSecret().equals(secret));
+    }
+    
+    // 内部方法：用于刷新缓存
+    public Mono<Void> refreshCache(List<AuthInfo> authInfos) {
+        // 使用 Redis reactive pipeline 批量写入
+    }
+    
+    @PostConstruct
+    public void init() {
+        // 从数据库加载数据到 Redis（阻塞式启动加载）
+    }
 }
 ```
 
-### 3.6 JdbcAuthRepository 设计
+### 3.6 JdbcAuthRepository 设计（阻塞式，包装为响应式）
 
 ```java
 @Component
 @ConditionalOnProperty(prefix = "auth.storage", name = "type", havingValue = "jdbc")
-public class JdbcAuthRepository implements AuthRepository {
+public class JdbcAuthRepository implements ReactiveAuthRepository {
     
     private final JdbcTemplate jdbcTemplate;
+    private final Scheduler jdbcScheduler;
     private final String tableName;
     
-    // findBySerial: SELECT * FROM auth_info WHERE serial = ? AND enabled = 1
-    // validate: 同上，然后比较 secret
+    // 使用 BoundedElastic Scheduler 隔离阻塞式数据库查询
+    @Override
+    public Mono<AuthInfo> findBySerial(String serial) {
+        return Mono.fromCallable(() -> {
+                String sql = "SELECT serial, park_code, secret FROM auth_info WHERE serial = ? AND enabled = 1";
+                return jdbcTemplate.query(sql, this::mapRow, serial);
+            })
+            .subscribeOn(Schedulers.boundedElastic())  // 隔离到专用线程池
+            .map(list -> list.isEmpty() ? null : list.get(0));
+    }
+    
+    @Override
+    public Mono<Boolean> validate(String serial, String secret) {
+        return findBySerial(serial)
+            .map(info -> info != null && info.getSecret().equals(secret));
+    }
 }
 ```
 
 ### 3.7 启动时数据加载
 
-**RedisAuthRepository 的启动流程**：
+**RedisAuthRepository 的启动流程（响应式初始化）**：
 
 ```java
 @Component
 @ConditionalOnProperty(prefix = "auth.storage", name = "type", havingValue = "redis")
-public class RedisAuthRepository implements AuthRepository {
+public class RedisAuthRepository implements ReactiveAuthRepository {
     
+    private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final AuthJdbcProperties jdbcProperties;
-    private final RedisTemplate<String, String> redisTemplate;
+    private final JdbcTemplate jdbcTemplate;  // 启动时阻塞式读取数据库
     
     @PostConstruct
     public void init() {
-        // 1. 连接数据库
+        // 1. 连接数据库（阻塞式，仅在启动时）
         // 2. 查询所有启用的认证信息：SELECT serial, park_code, secret FROM auth_info WHERE enabled = 1
-        // 3. 逐个写入 Redis：HSET {key-prefix}{serial} parkCode {parkCode} secret {secret}
+        // 3. 使用 Redis reactive pipeline 批量写入：
+        //    RedisCommand command = redisTemplate.createCommand();
+        //    for (AuthInfo info : authInfos) {
+        //        command.hset(keyPrefix + info.getSerial(), "parkCode", info.getParkCode());
+        //        command.hset(keyPrefix + info.getSerial(), "secret", info.getSecret());
+        //    }
+        //    command.execute();
         log.info("从数据库加载 {} 条认证信息到 Redis", count);
+    }
+    
+    /**
+     * 刷新缓存（供刷新接口调用）
+     */
+    public Mono<Integer> refreshCache() {
+        return Mono.fromCallable(() -> {
+                // 从数据库查询所有启用的认证信息
+                List<AuthInfo> authInfos = jdbcTemplate.query(...);
+                // 清空旧缓存：DEL key-prefix*
+                // 批量写入新缓存
+                return authInfos.size();
+            })
+            .subscribeOn(Schedulers.boundedElastic())
+            .thenMany(redisTemplate.execute(command -> {
+                // 使用 pipeline 批量写入
+            }))
+            .thenReturn(count);
     }
 }
 ```
 
 ### 3.8 刷新缓存接口设计
 
-**AuthRefreshController**:
+**AuthRefreshController（响应式 WebFlux）**:
 
 ```java
 @RestController
@@ -239,13 +316,25 @@ public class RedisAuthRepository implements AuthRepository {
 @ConditionalOnProperty(prefix = "auth.storage", name = "type", havingValue = "redis")
 public class AuthRefreshController {
     
+    private final String adminToken;
+    private final RedisAuthRepository redisAuthRepository;
+    
     @PostMapping("/refresh")
-    public ResponseEntity<RefreshResponse> refresh(
+    public Mono<ResponseEntity<RefreshResponse>> refresh(
         @RequestHeader("X-Admin-Token") String adminToken
     ) {
-        // 1. 验证 adminToken 是否匹配配置
-        // 2. 调用 AuthRefresher.refreshFromDatabaseToRedis()
-        // 3. 返回结果
+        if (!this.adminToken.equals(adminToken)) {
+            return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(RefreshResponse.error("Unauthorized: invalid admin token")));
+        }
+        
+        return redisAuthRepository.refreshCache()
+            .map(count -> ResponseEntity.ok(RefreshResponse.success(count)))
+            .onErrorResume(ex -> {
+                log.error("刷新缓存失败", ex);
+                return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(RefreshResponse.error(ex.getMessage())));
+            });
     }
 }
 ```
@@ -271,6 +360,20 @@ public class AuthRefreshController {
 }
 ```
 
+**注意**：由于项目当前使用的是 `spring-boot-starter-web`（阻塞式 MVC），而 Redis 使用响应式 API，有两种选择：
+
+1. **保持阻塞式 Controller**：在 Controller 中调用 `block()` 等待响应式操作完成
+   - 优点：不需要引入 WebFlux，改动最小
+   - 缺点：刷新接口是阻塞的（但这是管理操作，影响不大）
+
+2. **引入 WebFlux**：添加 `spring-boot-starter-webflux`，使用响应式 Controller
+   - 优点：端到端响应式，架构一致
+   - 缺点：增加依赖，需要配置 WebFlux
+
+**推荐方案 1（保持阻塞式 Controller）**：
+- 刷新接口是管理操作，调用频率低，阻塞影响可忽略
+- 认证路径（AuthHandler）保持纯响应式，确保高并发性能
+
 ### 3.9 错误处理
 
 | 场景 | 处理方式 |
@@ -280,24 +383,82 @@ public class AuthRefreshController {
 | 刷新接口 token 无效 | 返回 401 Unauthorized |
 | 刷新时数据库查询失败 | 返回 500 Internal Server Error，记录详细日志 |
 | Redis 写入失败 | 返回 500 Internal Server Error，记录详细日志 |
+| 认证时 Redis 查询返回空 | `Mono.empty()`，AuthHandler 返回认证失败 |
+
+### 3.10 AuthHandler 改造（响应式）
+
+**原有设计（阻塞式）**：
+```java
+@Override
+protected void channelRead0(ChannelHandlerContext ctx, Transmission msg) {
+    boolean isValid = authRepository.validate(serial, secret);  // 阻塞
+    if (isValid) {
+        // ...
+    }
+}
+```
+
+**改造后（响应式）**：
+```java
+@Component
+@Sharable
+public class AuthHandler extends SimpleChannelInboundHandler<Transmission> {
+
+    private final ReactiveAuthRepository authRepository;
+
+    public AuthHandler(ReactiveAuthRepository authRepository) {
+        this.authRepository = authRepository;
+    }
+
+    @Override
+    protected void channelRead0(ChannelHandlerContext ctx, Transmission msg) {
+        if (msg.getType() != Transmission.MessageType.TYPE_AUTHENTICATE) {
+            ctx.channel().close();
+            return;
+        }
+
+        Authenticate authenticate = Authenticate.parseFrom(msg.getMessage());
+        
+        // 使用响应式认证，订阅结果
+        authRepository.validate(authenticate.getSerial(), authenticate.getSecret())
+            .subscribe(
+                isValid -> handleValid(ctx, msg, authenticate),
+                error -> handleError(ctx, error)
+            );
+    }
+
+    private void handleValid(ChannelHandlerContext ctx, Transmission msg, Authenticate authenticate) {
+        authRepository.findBySerial(authenticate.getSerial())
+            .subscribe(authInfo -> {
+                // 认证成功，发送响应并移除 Handler
+                // ...
+            });
+    }
+}
+```
+
+**注意**：由于 Netty 的 `channelRead0` 是 `void` 方法，无法直接返回 `Mono`，需要在方法内部 `subscribe()` 处理结果。这是一种常见的响应式与事件驱动混合模式。
 
 ## 4. 依赖设计
 
 ### 4.1 新增依赖
 
 ```gradle
-// Redis
-implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+// Redis（响应式）
+implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
 
 // MySQL
 implementation 'org.springframework.boot:spring-boot-starter-jdbc'
 implementation 'com.mysql:mysql-connector-j'  // MySQL 8.x 驱动
 ```
 
+**注意**：使用 `spring-boot-starter-data-redis-reactive` 而不是 `spring-boot-starter-data-redis`，前者包含 `ReactiveRedisTemplate` 和 Lettuce 响应式客户端。
+
 ### 4.2 可选依赖（推荐）
 
 ```gradle
-// Redis 连接池
+// Redis 连接池（Lettuce 默认使用 Netty，已内置连接池）
+// 如果使用 Redis Cluster 或需要更多控制，可添加：
 implementation 'org.apache.commons:commons-pool2'
 ```
 
@@ -305,16 +466,18 @@ implementation 'org.apache.commons:commons-pool2'
 
 ### 5.1 单元测试
 
-- `RedisAuthRepositoryTest`: 测试 Redis 实现的认证逻辑（使用 Testcontainers 或 Embedded Redis）
-- `JdbcAuthRepositoryTest`: 测试数据库实现的认证逻辑（使用 Testcontainers 或 H2）
+- `RedisAuthRepositoryTest`: 测试 Redis 响应式实现的认证逻辑（使用 Testcontainers Redis）
+- `JdbcAuthRepositoryTest`: 测试数据库实现的认证逻辑（使用 Testcontainers MySQL）
+- `InMemoryAuthRepositoryTest`: 现有测试改造，验证响应式包装
 - `AuthRefreshControllerTest`: 测试刷新接口的权限验证和刷新逻辑
+- `AuthHandlerTest`: 测试响应式 AuthHandler 的消息处理
 
 ### 5.2 集成测试
 
 - `AuthStorageIntegrationTest`: 测试不同存储类型的端到端认证流程
 - 测试场景：
   1. in-memory 模式：现有测试保持不变
-  2. redis 模式：启动 Redis，验证认证流程
+  2. redis 模式：启动 Redis，验证认证流程（响应式）
   3. jdbc 模式：启动 MySQL，验证认证流程
 
 ### 5.3 刷新接口测试
@@ -326,6 +489,12 @@ curl -X POST -H "X-Admin-Token: change-me-in-production" http://localhost:8080/a
 # 失败：token 无效
 curl -X POST -H "X-Admin-Token: wrong-token" http://localhost:8080/api/auth/refresh
 ```
+
+### 5.4 响应式测试要点
+
+- 使用 `StepVerifier` 测试 `Mono` 和 `Flux`
+- 使用 `VirtualTimeScheduler` 测试超时和延迟场景
+- 使用 Testcontainers 提供真实的 Redis 和 MySQL 环境
 
 ## 6. 迁移路径
 
@@ -355,9 +524,47 @@ java -cp build/libs/parking-netty-framework-1.0.0.jar cn.tnar.parking.tool.AuthY
 
 （这是一个可选的工具类，用于辅助迁移）
 
-## 7. 配置示例
+## 7. 响应式编程要点
 
-### 7.1 开发环境（in-memory）
+### 7.1 为什么选择响应式 Redis
+
+| 对比项 | 阻塞式 Redis | 响应式 Redis |
+|--------|-------------|-------------|
+| API | `RedisTemplate` | `ReactiveRedisTemplate` |
+| 返回类型 | `T` | `Mono<T>` / `Flux<T>` |
+| 线程模型 | 阻塞调用线程 | 非阻塞，事件驱动 |
+| Netty 集成 | I/O 线程可能被阻塞 | 完全非阻塞，适合高并发 |
+| 代码复杂度 | 简单 | 较复杂（需要理解 Mono/Flux） |
+
+### 7.2 响应式编程模型
+
+```java
+// 链式调用示例
+authRepository.validate(serial, secret)
+    .flatMap(isValid -> {
+        if (!isValid) {
+            return Mono.error(new AuthenticationException("Invalid credentials"));
+        }
+        return authRepository.findBySerial(serial);
+    })
+    .map(AuthInfo::getParkCode)
+    .doOnNext(parkCode -> ChannelMaintainer.add(parkCode, channel))
+    .subscribe(
+        parkCode -> sendSuccessAndRemoveHandler(parkCode),
+        error -> handleCloseChannel(error)
+    );
+```
+
+### 7.3 注意事项
+
+1. **避免在 I/O 线程中阻塞**：不要调用 `block()`，使用 `subscribe()` 处理结果
+2. **异常处理**：使用 `onErrorResume()`、`onErrorReturn()` 处理错误
+3. **资源管理**：确保订阅正确释放，避免内存泄漏
+4. **测试**：使用 `StepVerifier` 验证 `Mono`/`Flux` 行为
+
+## 8. 配置示例
+
+### 8.1 开发环境（in-memory）
 
 ```yaml
 auth:
@@ -365,7 +572,7 @@ auth:
     type: in-memory
 ```
 
-### 7.2 生产环境（redis）
+### 8.2 生产环境（redis）
 
 ```yaml
 auth:
@@ -385,7 +592,7 @@ auth:
     table: auth_info
 ```
 
-### 7.3 生产环境（jdbc，无 Redis）
+### 8.3 生产环境（jdbc，无 Redis）
 
 ```yaml
 auth:
@@ -399,7 +606,7 @@ auth:
     table: auth_info
 ```
 
-## 8. 验收标准
+## 9. 验收标准
 
 1. **配置驱动**：通过 `auth.storage.type` 配置切换存储方式，默认 in-memory
 2. **Redis 模式**：
@@ -412,8 +619,12 @@ auth:
    - Token 验证通过后才执行刷新
    - 刷新成功后返回刷新的条目数
 5. **向后兼容**：现有 in-memory 模式保持不变，现有测试全部通过
+6. **响应式架构**：
+   - `ReactiveAuthRepository` 接口返回 `Mono` 类型
+   - Redis 操作使用 `ReactiveRedisTemplate`
+   - AuthHandler 使用非阻塞 subscribe() 处理结果
 
-## 9. 后续扩展建议
+## 10. 后续扩展建议
 
 1. **多 Redis 实例支持**：支持 Redis Cluster 或 Sentinel 模式
 2. **本地缓存**：在 Redis 基础上增加 Caffeine 本地缓存，进一步降低延迟
