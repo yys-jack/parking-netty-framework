@@ -17,7 +17,7 @@ COPY build/libs/parking-netty-framework-1.0.0.jar /app/app.jar
 
 # 使用 jlink 创建最小 JRE（添加 Spring Boot + Tomcat 需要的模块）
 RUN /opt/jdk/bin/jlink \
-    --add-modules java.base,java.logging,java.net.http,java.management,java.sql,java.naming,java.desktop,java.datatransfer,java.security.jgss \
+    --add-modules java.base,java.logging,java.net.http,java.management,java.sql,java.naming,java.desktop,java.datatransfer,java.security.jgss,java.instrument \
     --output /opt/jre-custom \
     --no-header-files \
     --no-man-pages \
@@ -25,6 +25,16 @@ RUN /opt/jdk/bin/jlink \
 
 # 阶段 2: 生产运行镜像
 FROM debian:bookworm-slim
+
+# 设置时区为上海
+ENV TZ=Asia/Shanghai
+
+# 安装时区数据和健康检查工具
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata wget \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo $TZ > /etc/timezone \
+    && rm -rf /var/lib/apt/lists/*
 
 # 创建非 root 用户
 RUN groupadd -r appgroup && useradd -r -g appgroup appuser
@@ -57,9 +67,9 @@ RUN chown -R appuser:appgroup /app
 # 切换到非 root 用户
 USER appuser
 
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:${MANAGEMENT_SERVER_PORT:-8081}/actuator/health || exit 1
+# 健康检查 (检查 HTTP 响应，200 或 503 都表示应用正常运行)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD wget -q --server-response --timeout=5 http://localhost:${MANAGEMENT_SERVER_PORT:-8081}/actuator/health 2>&1 | grep -q "HTTP" || exit 1
 
 # 暴露端口
 EXPOSE ${SERVER_PORT} ${NETTY_TCP_PORT}
