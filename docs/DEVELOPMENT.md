@@ -449,6 +449,70 @@ void findBySerial_whenNotExists_returnsEmpty() {
 }
 ```
 
+### 4.6 监控指标开发指南
+
+本项目使用 Micrometer + Prometheus + Grafana 构建监控体系。
+
+**使用 MetricsAspect 收集指标**:
+
+```java
+@Autowired
+private MetricsAspect metricsAspect;
+
+// 认证成功
+metricsAspect.recordAuthSuccess(parkCode, durationSeconds);
+
+// 认证失败
+metricsAspect.recordAuthFailure(parkCode, reason, durationSeconds);
+
+// 消息处理
+metricsAspect.recordMessage(messageType, parkCode, durationSeconds, success);
+```
+
+**指标说明**:
+
+| 指标名称 | 类型 | 说明 | 标签 |
+|---------|------|------|------|
+| `parking_netty_auth_success_total` | Counter | 认证成功次数 | `park_code` |
+| `parking_netty_auth_failure_total` | Counter | 认证失败次数 | `park_code`, `reason` |
+| `parking_netty_auth_duration_seconds` | Histogram | 认证耗时 | `park_code` |
+| `parking_netty_messages_total` | Counter | 消息处理总数 | `message_type`, `park_code` |
+| `parking_netty_messages_failure_total` | Counter | 消息处理失败数 | `message_type`, `park_code` |
+| `parking_netty_message_duration_seconds` | Histogram | 消息处理耗时 | `message_type`, `park_code` |
+
+**自定义指标配置**:
+
+在 `MetricsConfig` 中配置通用标签：
+
+```java
+@Configuration
+public class MetricsConfig {
+
+    @Bean
+    public MeterRegistryCustomizer<MeterRegistry> metricsCommonTags() {
+        return registry -> registry.config()
+            .commonTags("application", "parking-netty");
+    }
+}
+```
+
+**自定义指标**:
+
+```java
+@Autowired
+private MeterRegistry meterRegistry;
+
+// 计数器
+meterRegistry.counter("custom_metric_total", "tag_key", "tag_value").increment();
+
+// 计时器
+meterRegistry.timer("custom_duration_seconds", "tag_key", "tag_value")
+    .record(durationMs, TimeUnit.MILLISECONDS);
+
+// 规范（Gauge）
+meterRegistry.gauge("custom_gauge", object, obj -> obj.getValue());
+```
+
 ## 5. 测试
 
 ### 5.1 单元测试
