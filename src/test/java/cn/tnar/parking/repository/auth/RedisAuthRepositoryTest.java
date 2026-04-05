@@ -104,12 +104,7 @@ class RedisAuthRepositoryTest {
     @Test
     void findBySerial_whenNotExists_returnsEmpty() {
         StepVerifier.create(repository.findBySerial("NON-EXISTENT"))
-                .assertNext(info -> {
-                    // When key doesn't exist, Redis returns null values
-                    assert info.getSerial().equals("NON-EXISTENT");
-                    assert info.getParkCode() == null;
-                })
-                .verifyComplete();
+                .verifyComplete();  // Verifies Mono completes without emitting any value
     }
 
     @Test

@@ -60,13 +60,16 @@ public class RedisAuthRepository implements ReactiveAuthRepository {
         return redisTemplate
                 .opsForHash()
                 .multiGet(key, Arrays.asList("parkCode", "secret"))
-                .map(values -> {
+                .flatMap(values -> {
                     if (values == null || values.isEmpty()) {
-                        return null;
+                        return Mono.empty();
                     }
                     String parkCode = (String) values.get(0);
                     String secret = (String) values.get(1);
-                    return new AuthInfo(serial, parkCode, secret);
+                    if (parkCode == null || secret == null) {
+                        return Mono.empty();
+                    }
+                    return Mono.just(new AuthInfo(serial, parkCode, secret));
                 });
     }
 
