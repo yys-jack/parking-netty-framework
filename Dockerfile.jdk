@@ -1,0 +1,57 @@
+# Dragonwell 21 JDK 基础镜像
+# 用于其他项目的自定义 JRE 构建
+
+FROM debian:bookworm-slim AS jdk-builder
+
+ENV JAVA_HOME=/opt/jdk
+ENV PATH=$JAVA_HOME/bin:$PATH
+
+# 安装 jlink 所需的工具
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    binutils \
+    && rm -rf /var/lib/apt/lists/*
+
+# 复制完整 JDK（用于 jlink 裁剪）
+COPY dragonwell-21/ /opt/jdk/
+
+# 验证 JDK 版本
+RUN java -version
+
+# 使用 jlink 创建最小 JRE（添加 Spring Boot + Tomcat 需要的模块）
+RUN /opt/jdk/bin/jlink \
+    --add-modules java.base,java.logging,java.net.http,java.management,java.sql,java.naming,java.desktop,java.datatransfer,java.security.jgss,java.instrument \
+    --output /opt/jre-custom \
+    --no-header-files \
+    --no-man-pages \
+    --strip-debug
+
+# 最终镜像：只包含裁剪后的 JRE
+FROM debian:bookworm-slim
+
+ENV JAVA_HOME=/opt/jre
+ENV PATH=$JAVA_HOME/bin:$PATH
+ENV TZ=Asia/Shanghai
+
+# 安装时区数据
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo $TZ > /etc/timezone \
+    && rm -rf /var/lib/apt/lists/*
+
+# 从构建阶段复制自定义 JRE
+COPY --from=jdk-builder /opt/jre-custom /opt/jre
+
+# 验证 JRE 版本
+RUN java -version
+
+# 设置非 root 用户
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+
+USER appuser
+
+WORKDIR /app
+
+# 默认命令
+ENTRYPOINT ["java"]
+CMD ["-version"]
