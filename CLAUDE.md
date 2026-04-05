@@ -1,214 +1,103 @@
 # Parking Netty Framework - 快速参考
 
-> Worktree 友好型开发手册 · 快速查找 · 按需查阅
+> 5 分钟上手 · 按场景查阅
 
 ---
 
 ## 1. 快速开始
 
-**环境**: JDK 21 (Alibaba Dragonwell)
+**环境**: JDK 21 | **启动**: `./gradlew bootRun` | **测试**: `./gradlew test`
 
-```bash
-# 启动应用
-./gradlew bootRun
-
-# 运行测试
-./gradlew test
-
-# 打包
-./gradlew bootJar
-```
-
-**添加 Handler** (3 步):
-1. 创建类继承 `AbstractHandler`，加 `@Component`
-2. 实现 `processedType()` 和 `doHandle()`
-3. 编写单元测试
-
-**配置文件**: `application.yml` (默认 H2)，`auth.yml` (认证配置)
+**添加 Handler**: 继承 `AbstractHandler` → 加 `@Component` → 实现 `processedType()`/`doHandle()` → 写测试
 
 ---
 
 ## 2. 代码规范
 
-### 2.1 命名规范
+**命名**: 类名大驼峰 (`CarInHandler`) | 方法小驼峰 (`findBySerial()`) | 常量全大写 (`CODE_SUCCESS`)
 
-| 类型 | 规范 | 示例 |
-|------|------|------|
-| 类名 | 大驼峰 | `CarInHandler` |
-| 方法名 | 小驼峰 | `findBySerial()` |
-| 变量名 | 小驼峰 | `parkCode` |
-| 常量名 | 全大写 | `CODE_SUCCESS` |
-| 包名 | 全小写 | `cn.tnar.parking.netty` |
+**红线**: 行≤120 | 方法≤100 行 | 参数≤8 个 | 圈复杂度≤10 | 缩进 4 空格
 
-### 2.2 代码风格 (红线)
-
-- 行长度 ≤ 120 字符
-- 方法长度 ≤ 100 行
-- 参数 ≤ 8 个
-- 圈复杂度 ≤ 10
-- 缩进 4 空格 (禁止 Tab)
-
-### 2.3 Handler 示例
-
+**示例**:
 ```java
 @Slf4j
 @Component
 public class SpaceHandler extends AbstractHandler {
     public SpaceHandler(MetricsAspect metricsAspect) { super(metricsAspect); }
-    
     @Override
     public Transmission.MessageType processedType() { return Transmission.MessageType.TYPE_SPACE; }
-    
     @Override
     protected Respond doHandle(Transmission transmission, String parkCode) {
-        Space space = Space.parseFrom(transmission.getMessage());
-        log.info("接收车位上报，parkCode: {}, 总车位：{}", parkCode, space.getTotal());
+        log.info("接收车位上报，parkCode: {}", parkCode);
         return RespondProto.success();
     }
 }
 ```
 
-### 2.4 Repository 示例
-
-```java
-@Component
-@ConditionalOnProperty(prefix = "auth.storage", name = "type", havingValue = "redis")
-public class RedisAuthRepository implements ReactiveAuthRepository {
-    private final ReactiveRedisTemplate<String, String> redisTemplate;
-    
-    @Override
-    public Mono<AuthInfo> findBySerial(String serial) {
-        return redisTemplate.opsForHash().multiGet(keyPrefix + serial, ...)
-            .flatMap(values -> values.isEmpty() ? Mono.empty() : Mono.just(...));
-    }
-}
-```
-
-**响应式原则**:
-- 返回 `Mono<T>`，空值用 `Mono.empty()`
-- 阻塞操作加 `subscribeOn(Schedulers.boundedElastic())`
+**响应式**: 返回 `Mono<T>` | 空值 `Mono.empty()` | 阻塞操作加 `subscribeOn(Schedulers.boundedElastic())`
 
 ---
 
 ## 3. 开发清单
 
 ### 3.1 添加功能
-
-- [ ] 修改 proto (如需要) → `./gradlew generateProto`
+- [ ] 修改 proto → `./gradlew generateProto`
 - [ ] 实现 Handler/Repository
 - [ ] 编写单元测试 (覆盖率 ≥ 80%)
-- [ ] 更新 JavaDoc 和文档
+- [ ] 更新文档
 
-### 3.2 提交前检查
-
+### 3.2 提交前检查 (**测试必须通过**)
 ```bash
-# 1. 查看变更
 git status && git diff
-
-# 2. 运行测试
-./scripts/test-all.sh
-
-# 3. 代码风格检查
-./gradlew checkstyleMain checkstyleTest
-
-# 4. 确认文档已更新
-git diff docs/ CLAUDE.md
+./scripts/test-all.sh          # 测试必须通过 ✅
+./gradlew checkstyleMain test  # 代码风格 + 测试
+git diff docs/ CLAUDE.md       # 确认文档已更新
 ```
 
-### 3.3 Git Worktree 模式
+### 3.3 Git Worktree
 
 ```bash
-# 创建工作树 (隔离开发)
-git worktree add ../parking-feature feature/xxx
-
-# 切换到工作树
-cd ../parking-feature
-
-# 完成后删除
-git worktree remove feature/xxx
+git worktree add ../parking-feature feature/xxx  # 创建工作树
+cd ../parking-feature                             # 切换
+git worktree remove feature/xxx                   # 完成后删除
 ```
 
-**Commit Message**:
-```
-feat: add payment handler
-
-- Create PaymentHandler
-- Add unit tests
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
-```
+**Commit Message**: `feat:` 新功能 | `fix:` 修复 | `docs:` 文档 | `refactor:` 重构 | `test:` 测试 | `chore:` 构建
 
 ### 3.4 文档规范
-
 | 修改内容 | 更新文档 |
 |---------|---------|
-| 业务代码 | JavaDoc |
-| 公共 API | CLAUDE.md |
-| 功能模块 | DEVELOPMENT.md |
-| 配置项 | DEVELOPMENT.md + PRODUCTION_DEPLOYMENT.md |
+| 业务代码/公共 API | JavaDoc + CLAUDE.md |
+| 功能模块/配置项 | DEVELOPMENT.md + PRODUCTION_DEPLOYMENT.md |
 
 ---
 
 ## 4. 文档索引
 
-### 4.1 开发场景
-
-| 场景 | 文档 | 章节 |
-|------|------|------|
-| 添加 Handler | `docs/DEVELOPMENT.md` | 4.1 |
-| 添加消息类型 | `docs/DEVELOPMENT.md` | 5.2 |
-| 响应式编程 | `docs/DEVELOPMENT.md` | 5.4 |
-| 数据库配置 | `docs/DEVELOPMENT.md` | 2.1 |
-| Redis 配置 | `docs/PRODUCTION_DEPLOYMENT.md` | 3 |
-
-### 4.2 测试场景
-
-| 场景 | 文档 | 章节 |
-|------|------|------|
-| 单元测试 | `docs/TESTING.md` | 6.1 |
-| 集成测试 | `docs/TESTING.md` | 6.2 |
-| 覆盖率报告 | `docs/TESTING.md` | 4.2 |
-
-### 4.3 部署场景
-
-| 场景 | 文档 | 章节 |
-|------|------|------|
-| Docker 部署 | `docs/DOCKER_DEPLOYMENT.md` | - |
-| 生产部署 | `docs/PRODUCTION_DEPLOYMENT.md` | - |
-| 监控配置 | `docs/MONITORING.md` | - |
-
-### 4.4 故障排查
-
-| 问题 | 解决方案 |
-|------|---------|
-| 端口占用 | `netstat -tlnp \| grep 8889` |
-| 连接拒绝 | 检查服务和防火墙 |
-| Redis 连接失败 | 检查 Redis 服务和密码 |
-| Handler 未处理 | 确认 `@Component` 注解 |
-
-详见 `docs/DEVELOPMENT.md#8-故障排查`
+| 场景 | 文档 | 场景 | 文档 |
+|------|------|------|------|
+| 添加 Handler | DEVELOPMENT.md#4.1 | 数据库配置 | DEVELOPMENT.md#2.1 |
+| 消息类型 | DEVELOPMENT.md#5.2 | Redis 配置 | PRODUCTION_DEPLOYMENT.md#3 |
+| 响应式编程 | DEVELOPMENT.md#5.4 | 单元测试 | TESTING.md#6.1 |
+| Docker 部署 | DOCKER_DEPLOYMENT.md | 监控 | MONITORING.md |
+| 故障排查 | DEVELOPMENT.md#8 | 完整文档 | 见下方列表 |
 
 ---
 
 ## 5. 常用命令
 
-**构建**: `./gradlew generateProto` · `./gradlew build` · `./gradlew bootJar`
+**构建**: `./gradlew generateProto` · `build` · `bootJar`
 
-**测试**: `./gradlew test` · `./scripts/test-all.sh` · `./gradlew jacocoTestReport`
+**测试**: `./gradlew test` · `./scripts/test-all.sh` · `jacocoTestReport`
 
 **质量**: `./gradlew checkstyleMain checkstyleTest`
 
-**Docker**: `./scripts/build-docker.sh` · `./scripts/start.sh` · `docker compose logs -f`
+**Docker**: `./scripts/build-docker.sh` · `start.sh` · `docker compose logs -f`
 
-**GitHub CLI**: `gh pr create` · `gh pr list` · `gh run view --log`
+**Git**: `git add` · `commit -m "feat: xxx"` · `push` · `gh pr create`
 
 ---
 
 ## 6. 完整文档
 
-- [开发指南](docs/DEVELOPMENT.md)
-- [测试体系](docs/TESTING.md)
-- [Docker 部署](docs/DOCKER_DEPLOYMENT.md)
-- [生产部署](docs/PRODUCTION_DEPLOYMENT.md)
-- [监控指南](docs/MONITORING.md)
-- [响应式架构](docs/RESPONSIVE_ARCHITECTURE.md)
+[DEVELOPMENT.md](docs/DEVELOPMENT.md) · [TESTING.md](docs/TESTING.md) · [DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md) · [PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) · [MONITORING.md](docs/MONITORING.md) · [RESPONSIVE_ARCHITECTURE.md](docs/RESPONSIVE_ARCHITECTURE.md)
