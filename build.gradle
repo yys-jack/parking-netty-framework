@@ -42,8 +42,7 @@ dependencies {
 
 
     // Utils
-    implementation 'cn.hutool:hutool-all:5.8.20'
-    implementation 'org.apache.commons:commons-lang3:3.12.0'
+    implementation 'org.apache.commons:commons-lang3:3.18.0'
     implementation 'com.alibaba:fastjson:1.2.83'
 
     // Lombok
