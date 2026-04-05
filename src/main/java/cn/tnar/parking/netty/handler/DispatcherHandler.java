@@ -57,11 +57,14 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
                 responseMono = handler.handle(msg, parkCode);
             }
 
+            log.debug("[SCHEDULER] 切换到 databaseScheduler, parkCode={}, type={}", parkCode, msg.getType());
             responseMono
                 .timeout(Duration.ofSeconds(TIMEOUT_SECONDS),
                     Mono.just(RespondProto.failure("处理超时")))
+                .doOnSubscribe(sub -> log.debug("[SCHEDULER] 开始 DB 任务，thread={}", Thread.currentThread().getName()))
                 .subscribeOn(databaseScheduler)
                 .publishOn(Schedulers.immediate())
+                .doOnNext(r -> log.debug("[SCHEDULER] DB 任务完成，thread={}", Thread.currentThread().getName()))
                 .subscribe(
                     respond -> {
                         // 切换回 EventLoop 线程执行写操作，确保经过编码器
