@@ -424,16 +424,17 @@ return Mono.empty();
 return Mono.just(null);
 ```
 
-3. **阻塞操作隔离** - JDBC 等阻塞操作使用 `Schedulers.boundedElastic()`
+3. **阻塞操作隔离** - 由 `databaseScheduler` 统一调度
 
 ```java
+// 在 Repository 层无需 subscribeOn，由 DispatcherHandler 统一管理
 @Override
 public Mono<AuthInfo> findBySerial(String serial) {
     return Mono.fromCallable(() -> {
         // 阻塞式 JDBC 调用
         return jdbcTemplate.queryForObject(...);
-    })
-    .subscribeOn(Schedulers.boundedElastic()); // 隔离到弹性线程池
+    });
+    // databaseScheduler 在 DispatcherHandler 层统一调度
 }
 ```
 
@@ -471,6 +472,90 @@ void findBySerial_whenNotExists_returnsEmpty() {
     Mono<AuthInfo> result = repository.findBySerial("NOT-EXISTS");
     StepVerifier.create(result)
         .verifyComplete(); // 验证 Mono.empty()
+}
+```
+
+### 5.5 统一调度器架构
+
+**日期**: 2026-04-06
+
+本项目采用统一调度器架构，所有数据库相关操作由 `databaseScheduler` 集中管理。
+
+**架构演进**:
+
+早期实现中，每个 Repository 层都使用 `Schedulers.boundedElastic()` 进行线程隔离：
+
+```
+DispatcherHandler (无调度器)
+    ↓
+AbstractHandler (subscribeOn boundedElastic)  ← 冗余
+    ↓  
+Repository (subscribeOn boundedElastic)       ← 冗余
+```
+
+实际上，只有最内层的 `subscribeOn` 生效，外层的调度器被覆盖，导致配置无法统一管理。
+
+**当前架构**:
+
+重构后，所有数据库操作由 `databaseScheduler` 统一调度：
+
+```
+DispatcherHandler (subscribeOn databaseScheduler)  ← 统一调度点
+    ↓
+AbstractHandler (无调度器)
+    ↓
+Repository (无调度器)
+```
+
+**优势**:
+- **可配置**: 通过 `scheduler.database.*` 配置线程池参数
+- **可监控**: 统一线程池便于观察和调优
+- **更清晰**: 调度责任明确，代码更易维护
+
+**配置示例**:
+
+```yaml
+scheduler:
+  database:
+    core-threads: 10
+    max-threads: 50
+    queue-capacity: 100
+```
+
+**代码示例**:
+
+```java
+// Repository 层 - 无需 subscribeOn
+@Repository
+public class JdbcAuthRepository implements ReactiveAuthRepository {
+    
+    private final JdbcTemplate jdbcTemplate;
+    
+    @Override
+    public Mono<AuthInfo> findBySerial(String serial) {
+        return Mono.fromCallable(() -> {
+            // JDBC 查询逻辑
+            return jdbcTemplate.queryForObject(...);
+        });
+        // 由 DispatcherHandler 的 databaseScheduler 统一调度
+    }
+}
+```
+
+```java
+// DispatcherHandler 层 - 统一调度点
+@Component
+public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission> {
+    
+    private final Scheduler databaseScheduler;
+    
+    @Override
+    protected void channelRead0(ChannelHandlerContext ctx, Transmission msg) {
+        // ...
+        responseMono
+            .subscribeOn(databaseScheduler)  // 统一调度点
+            .subscribe(...);
+    }
 }
 ```
 

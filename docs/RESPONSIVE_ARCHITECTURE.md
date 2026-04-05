@@ -119,8 +119,8 @@ public class JdbcAuthRepository implements ReactiveAuthRepository {
                 new BeanPropertyRowMapper<>(AuthInfo.class),
                 serial
             );
-        })
-        .subscribeOn(Schedulers.boundedElastic()); // 隔离阻塞操作
+        });
+        // 无需 subscribeOn，由 DispatcherHandler 的 databaseScheduler 统一调度
     }
 
     @Override
@@ -173,6 +173,93 @@ void findBySerial_whenNotExists_returnsEmpty() {
 ## 5. 最佳实践
 
 1. **始终使用 Mono.empty()** - 不要返回 `null`
-2. **阻塞操作隔离** - 使用 `Schedulers.boundedElastic()`
+2. **阻塞操作隔离** - 由 `databaseScheduler` 统一调度（在 DispatcherHandler 层）
 3. **异常处理** - 使用 `onErrorResume()` 提供降级
 4. **测试完整** - 使用 `StepVerifier` 覆盖所有场景
+
+---
+
+## 6. 统一调度器架构
+
+**日期**: 2026-04-06  
+**状态**: 已启用
+
+### 6.1 架构演进
+
+早期实现中，每个 Repository 层都使用 `Schedulers.boundedElastic()` 进行线程隔离：
+
+```
+DispatcherHandler (无调度器)
+    ↓
+AbstractHandler (subscribeOn boundedElastic)  ← 冗余
+    ↓  
+Repository (subscribeOn boundedElastic)       ← 冗余
+```
+
+实际上，只有最内层的 `subscribeOn` 生效，外层的调度器被覆盖，导致配置无法统一管理。
+
+### 6.2 当前架构
+
+重构后，所有数据库操作由 `databaseScheduler` 统一调度：
+
+```
+DispatcherHandler (subscribeOn databaseScheduler)  ← 统一调度点
+    ↓
+AbstractHandler (无调度器)
+    ↓
+Repository (无调度器)
+```
+
+**优势**:
+- **可配置**: 通过 `scheduler.database.*` 配置线程池参数
+- **可监控**: 统一线程池便于观察和调优
+- **更清晰**: 调度责任明确，代码更易维护
+
+### 6.3 配置示例
+
+```yaml
+scheduler:
+  database:
+    core-threads: 10
+    max-threads: 50
+    queue-capacity: 100
+```
+
+### 6.4 代码示例
+
+**Repository 层** - 无需 `subscribeOn`：
+
+```java
+@Repository
+public class JdbcAuthRepository implements ReactiveAuthRepository {
+    
+    private final JdbcTemplate jdbcTemplate;
+    
+    @Override
+    public Mono<AuthInfo> findBySerial(String serial) {
+        return Mono.fromCallable(() -> {
+            // JDBC 查询逻辑
+            return jdbcTemplate.queryForObject(...);
+        });
+        // 无需 subscribeOn，由 DispatcherHandler 的 databaseScheduler 统一调度
+    }
+}
+```
+
+**DispatcherHandler 层** - 统一调度点：
+
+```java
+@Component
+public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission> {
+    
+    private final Scheduler databaseScheduler;
+    
+    @Override
+    protected void channelRead0(ChannelHandlerContext ctx, Transmission msg) {
+        // ...
+        responseMono
+            .subscribeOn(databaseScheduler)  // 统一调度点
+            .subscribe(...);
+    }
+}
+```
