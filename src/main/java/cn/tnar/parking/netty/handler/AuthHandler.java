@@ -4,6 +4,7 @@ import cn.tnar.parking.model.Authenticate;
 import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.RespondProto;
 import cn.tnar.parking.model.Transmission;
+import com.google.protobuf.InvalidProtocolBufferException;
 import cn.tnar.parking.netty.ChannelMaintainer;
 import cn.tnar.parking.repository.auth.ReactiveAuthRepository;
 import io.netty.channel.Channel;
@@ -13,6 +14,7 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.channel.SimpleChannelInboundHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 /**
  * 认证处理器
@@ -29,66 +31,88 @@ public class AuthHandler extends SimpleChannelInboundHandler<Transmission> {
     }
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, Transmission msg) throws Exception {
+    protected void channelRead0(ChannelHandlerContext ctx, Transmission msg) {
         Channel channel = ctx.channel();
-        log.info("AuthHandler received message type: {}, is AUTHENTICATE: {}",
-                msg.getType(), msg.getType() == Transmission.MessageType.TYPE_AUTHENTICATE);
+        log.info("AuthHandler received message type: {}", msg.getType());
 
         if (msg.getType() != Transmission.MessageType.TYPE_AUTHENTICATE) {
-            log.warn("收到非认证消息，关闭连接：{}", msg.getType());
+            log.warn("Non-authenticate message received, closing connection");
             channel.close();
-        } else {
-            Authenticate authenticate = Authenticate.parseFrom(msg.getMessage());
-            log.info("authenticate : {}", authenticate);
-
-            boolean isValid = authRepository.validate(authenticate.getSerial(), authenticate.getSecret()).block();
-
-            if (!isValid) {
-                log.error("认证失败：serial={}", authenticate.getSerial());
-                channel.close();
-                return;
-            }
-
-            cn.tnar.parking.repository.auth.AuthInfo authInfo = authRepository.findBySerial(authenticate.getSerial()).block();
-            if (authInfo == null) {
-                log.error("认证失败：serial={}", authenticate.getSerial());
-                channel.close();
-                return;
-            }
-            String parkCode = authInfo.getParkCode();
-
-            ChannelMaintainer.add(parkCode, channel);
-            channel.attr(ChannelMaintainer.PARK_CODE_ATTR).setIfAbsent(parkCode);
-
-            Respond resp = RespondProto.success();
-            Transmission ret = Transmission.newBuilder()
-                    .setType(Transmission.MessageType.TYPE_RESPOND)
-                    .setID(msg.getID())
-                    .setMessage(resp.toByteString())
-                    .build();
-
-            // 先发送响应，再移除 Handler
-            final String finalParkCode = parkCode;
-            channel.writeAndFlush(ret).addListener(future -> {
-                if (future.isSuccess()) {
-                    log.info("parkCode : {}  认证成功，响应已发送", finalParkCode);
-                } else {
-                    log.error("parkCode : {}  认证成功，但响应发送失败", finalParkCode);
-                }
-            });
-
-            ChannelPipeline pipeline = ctx.pipeline();
-            if (pipeline.get(this.getClass()) != null) {
-                pipeline.remove(this);
-                pipeline.remove("auth-timeout");
-                pipeline.remove("auth-disconnect");
-            }
-            log.info("parkCode : {}  认证成功，AuthHandler 已移除", parkCode);
+            return;
         }
+
+        Authenticate authenticate;
+        try {
+            authenticate = Authenticate.parseFrom(msg.getMessage());
+        } catch (InvalidProtocolBufferException e) {
+            log.error("Failed to parse authenticate message", e);
+            channel.close();
+            return;
+        }
+
+        // Reactive authentication flow
+        authRepository.validate(authenticate.getSerial(), authenticate.getSecret())
+                .subscribe(
+                        isValid -> handleValid(ctx, msg, authenticate, channel),
+                        error -> handleError(ctx, channel, error)
+                );
+    }
+
+    private void handleValid(ChannelHandlerContext ctx, Transmission msg,
+                             Authenticate authenticate, Channel channel) {
+        authRepository.findBySerial(authenticate.getSerial())
+                .subscribe(
+                        authInfo -> {
+                            if (authInfo == null) {
+                                log.error("Auth failed: serial not found");
+                                channel.close();
+                                return;
+                            }
+
+                            String parkCode = authInfo.getParkCode();
+                            ChannelMaintainer.add(parkCode, channel);
+                            channel.attr(ChannelMaintainer.PARK_CODE_ATTR).setIfAbsent(parkCode);
+
+                            Respond resp = RespondProto.success();
+                            Transmission ret = Transmission.newBuilder()
+                                    .setType(Transmission.MessageType.TYPE_RESPOND)
+                                    .setID(msg.getID())
+                                    .setMessage(resp.toByteString())
+                                    .build();
+
+                            channel.writeAndFlush(ret).addListener(future -> {
+                                if (future.isSuccess()) {
+                                    log.info("parkCode: {} auth success", parkCode);
+                                } else {
+                                    log.error("parkCode: {} auth success but response failed", parkCode);
+                                }
+                                removeAuthHandler(ctx.pipeline());
+                            });
+                        },
+                        error -> handleError(ctx, channel, error)
+                );
+    }
+
+    private void handleError(ChannelHandlerContext ctx, Channel channel, Throwable error) {
+        log.error("Authentication error: " + error.getMessage());
+        channel.close();
+    }
+
+    private void removeAuthHandler(ChannelPipeline pipeline) {
+        if (pipeline.get(this.getClass()) != null) {
+            pipeline.remove(this);
+        }
+        if (pipeline.get("auth-timeout") != null) {
+            pipeline.remove("auth-timeout");
+        }
+        if (pipeline.get("auth-disconnect") != null) {
+            pipeline.remove("auth-disconnect");
+        }
+        log.info("AuthHandler removed");
     }
 
     @Override
-    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+    public void handlerRemoved(ChannelHandlerContext ctx) {
         log.info("AuthHandler has been removed");
     }
 }
