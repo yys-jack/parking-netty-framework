@@ -2,6 +2,7 @@ package cn.tnar.parking.integration;
 
 import cn.tnar.parking.aspect.MetricsAspect;
 import cn.tnar.parking.config.AuthProperties;
+import cn.tnar.parking.config.SchedulerConfig;
 import cn.tnar.parking.model.Authenticate;
 import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.RespondProto;
@@ -39,11 +40,13 @@ class AuthIntegrationTest {
     private DispatcherHandler dispatcherHandler;
     private SimpleMeterRegistry registry;
     private MetricsAspect metricsAspect;
+    private SchedulerConfig schedulerConfig;
 
     @BeforeEach
     void setUp() {
         registry = new SimpleMeterRegistry();
         metricsAspect = new MetricsAspect(registry);
+        schedulerConfig = new SchedulerConfig();
 
         // 创建测试用认证配置
         AuthProperties properties = new AuthProperties();
@@ -55,7 +58,7 @@ class AuthIntegrationTest {
 
         authRepository = new InMemoryAuthRepository(properties);
         authHandler = new AuthHandler(authRepository, metricsAspect);
-        dispatcherHandler = new DispatcherHandler(handlerRegistry);
+        dispatcherHandler = new DispatcherHandler(handlerRegistry, schedulerConfig);
     }
 
     @Test

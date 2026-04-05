@@ -7,9 +7,9 @@ import cn.tnar.parking.model.Transmission;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.test.StepVerifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  * CarOutHandler 单元测试
@@ -26,7 +26,7 @@ class CarOutHandlerTest {
     }
 
     @Test
-    void testHandle_Success() throws Exception {
+    void testHandle_Success() {
         // Given
         CarOut carOut = CarOut.newBuilder()
                 .setPlateNo("陕 A12345")
@@ -41,20 +41,19 @@ class CarOutHandlerTest {
                 .build();
         String parkCode = "PARK001";
 
-        // When
-        Respond respond = handler.handle(transmission, parkCode);
+        // When & Then
+        reactor.core.publisher.Mono<Respond> result = handler.handle(transmission, parkCode);
 
-        // Then
-        assertNotNull(respond);
-        assertEquals(Respond.RespondCode.CODE_SUCCESS, respond.getCode());
+        StepVerifier.create(result)
+            .assertNext(respond -> {
+                assertEquals(Respond.RespondCode.CODE_SUCCESS, respond.getCode());
+            })
+            .verifyComplete();
     }
 
     @Test
     void testProcessedType() {
-        // When
-        Transmission.MessageType type = handler.processedType();
-
-        // Then
-        assertEquals(Transmission.MessageType.TYPE_CAR_OUT, type);
+        // When & Then
+        assertEquals(Transmission.MessageType.TYPE_CAR_OUT, handler.processedType());
     }
 }

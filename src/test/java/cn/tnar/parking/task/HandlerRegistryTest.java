@@ -5,6 +5,7 @@ import cn.tnar.parking.model.RespondProto;
 import cn.tnar.parking.model.Transmission;
 import cn.tnar.parking.netty.handler.Handler;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -21,8 +22,8 @@ class HandlerRegistryTest {
         // 创建一个测试 Handler
         Handler testHandler = new Handler() {
             @Override
-            public Respond handle(Transmission transmission, String parkCode) {
-                return RespondProto.success();
+            public Mono<Respond> handle(Transmission transmission, String parkCode) {
+                return Mono.just(RespondProto.success());
             }
 
             @Override

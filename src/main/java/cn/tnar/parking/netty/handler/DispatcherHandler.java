@@ -1,9 +1,10 @@
 package cn.tnar.parking.netty.handler;
 
-import cn.tnar.parking.model.BusinessException;
+import cn.tnar.parking.config.SchedulerConfig;
 import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.RespondProto;
 import cn.tnar.parking.model.Transmission;
+import cn.tnar.parking.netty.ChannelMaintainer;
 import cn.tnar.parking.task.HandlerRegistry;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -12,9 +13,11 @@ import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.time.Duration;
 
 /**
  * 消息分派处理器
@@ -25,71 +28,72 @@ import java.util.concurrent.Executors;
 @ChannelHandler.Sharable
 public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission> {
 
-    private final ExecutorService databaseExecutor = Executors.newFixedThreadPool(16);
     private final HandlerRegistry handlerRegistry;
+    private final Scheduler databaseScheduler;
+    private static final int TIMEOUT_SECONDS = 10;
 
-    public DispatcherHandler(HandlerRegistry handlerRegistry) {
+    public DispatcherHandler(
+        HandlerRegistry handlerRegistry,
+        SchedulerConfig schedulerConfig) {
         this.handlerRegistry = handlerRegistry;
+        this.databaseScheduler = schedulerConfig.databaseScheduler(schedulerConfig.databaseSchedulerProperties());
     }
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Transmission msg) throws Exception {
-        String parkCode = ctx.channel().attr(cn.tnar.parking.netty.ChannelMaintainer.PARK_CODE_ATTR).get();
+        String parkCode = ctx.channel().attr(ChannelMaintainer.PARK_CODE_ATTR).get();
         log.debug("[MSG_IN] parkCode={}, type={}, id={}", parkCode, msg.getType(), msg.getID());
 
         if (!Transmission.MessageType.TYPE_RESPOND.equals(msg.getType())) {
-            databaseExecutor.execute(() -> {
-                Respond respond;
-                try {
-                    Handler handler = handlerRegistry.getHandler(msg.getType());
-                    if (handler == null) {
-                        log.warn("[WARN] 未找到处理器，parkCode={}, messageType={}", parkCode, msg.getType());
-                        respond = RespondProto.success();
-                    } else {
-                        respond = handler.handle(msg, parkCode);
-                    }
-                } catch (BusinessException e) {
-                    log.error("[ERROR] 业务异常，parkCode={}, type={}, id={}, message={}",
-                            parkCode, msg.getType(), msg.getID(), e.getMessage());
-                    respond = handleBusinessException(e);
-                } catch (Exception e) {
-                    log.error("[ERROR] 系统异常，parkCode={}, type={}, id={}, exception={}",
-                            parkCode, msg.getType(), msg.getID(), e.getMessage());
-                    respond = handleSystemException(e);
-                }
+            Handler handler = handlerRegistry.getHandler(msg.getType());
 
-                Transmission response = Transmission.newBuilder()
-                        .setID(msg.getID())
-                        .setType(Transmission.MessageType.TYPE_RESPOND)
-                        .setMessage(respond.toByteString())
-                        .build();
+            Mono<Respond> responseMono;
+            if (handler == null) {
+                log.warn("[WARN] 未找到处理器，parkCode={}, messageType={}", parkCode, msg.getType());
+                responseMono = Mono.just(RespondProto.success());
+            } else {
+                responseMono = handler.handle(msg, parkCode);
+            }
 
-                ctx.executor().execute(() -> {
-                    if (ctx.channel().isActive()) {
-                        ctx.writeAndFlush(response);
+            responseMono
+                .timeout(Duration.ofSeconds(TIMEOUT_SECONDS),
+                    Mono.just(RespondProto.failure("处理超时")))
+                .subscribeOn(databaseScheduler)
+                .publishOn(Schedulers.immediate())
+                .subscribe(
+                    respond -> {
+                        Transmission response = Transmission.newBuilder()
+                            .setID(msg.getID())
+                            .setType(Transmission.MessageType.TYPE_RESPOND)
+                            .setMessage(respond.toByteString())
+                            .build();
+
+                        if (ctx.channel().isActive()) {
+                            ctx.writeAndFlush(response);
+                        }
+                    },
+                    error -> {
+                        log.error("[ERROR] 处理消息失败，parkCode={}, type={}, id={}, error={}",
+                            parkCode, msg.getType(), msg.getID(), error.getMessage());
+
+                        Respond errorRespond = RespondProto.failure("系统异常");
+                        Transmission errorResponse = Transmission.newBuilder()
+                            .setID(msg.getID())
+                            .setType(Transmission.MessageType.TYPE_RESPOND)
+                            .setMessage(errorRespond.toByteString())
+                            .build();
+
+                        if (ctx.channel().isActive()) {
+                            ctx.writeAndFlush(errorResponse);
+                        }
                     }
-                });
-            });
+                );
         }
-    }
-
-    /**
-     * 处理业务异常
-     */
-    private Respond handleBusinessException(BusinessException e) {
-        return RespondProto.failure(e.getMessage());
-    }
-
-    /**
-     * 处理系统异常
-     */
-    private Respond handleSystemException(Exception e) {
-        return RespondProto.failure();
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        cn.tnar.parking.netty.ChannelMaintainer.remove(ctx.channel());
+        ChannelMaintainer.remove(ctx.channel());
     }
 
     @Override
