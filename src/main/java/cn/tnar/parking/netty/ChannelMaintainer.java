@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 /**
  * 渠道维护器 - 管理 Netty Channel 连接
@@ -22,6 +23,18 @@ public final class ChannelMaintainer {
     private static final Map<String, ChannelId> ACTIVE_CHANNELS = new ConcurrentHashMap<>(128);
     private static final Map<ChannelId, String> ACTIVE_CHANNELS_INDEX = new ConcurrentHashMap<>(128);
 
+    // 指标回调
+    private static Consumer<String> connectionCallback;
+    private static Consumer<String> disconnectionCallback;
+
+    public static void setConnectionCallback(Consumer<String> callback) {
+        connectionCallback = callback;
+    }
+
+    public static void setDisconnectionCallback(Consumer<String> callback) {
+        disconnectionCallback = callback;
+    }
+
 
     public static void add(String parkCode, Channel channel) {
         CHANNEL_GROUP.add(channel);
@@ -29,6 +42,9 @@ public final class ChannelMaintainer {
         ACTIVE_CHANNELS.put(parkCode, id);
         ACTIVE_CHANNELS_INDEX.put(id, parkCode);
         log.info("add channel {}", id);
+        if (connectionCallback != null) {
+            connectionCallback.accept(parkCode);
+        }
     }
 
     public static void remove(Channel channel) {
@@ -38,6 +54,9 @@ public final class ChannelMaintainer {
                 .ifPresent(parkCode -> {
                     if (ACTIVE_CHANNELS.get(parkCode).equals(id)) {
                         ACTIVE_CHANNELS.remove(parkCode);
+                    }
+                    if (disconnectionCallback != null) {
+                        disconnectionCallback.accept(parkCode);
                     }
                 });
         log.info("remove channel {}", id);
@@ -49,5 +68,12 @@ public final class ChannelMaintainer {
             return CHANNEL_GROUP.find(channelId);
         }
         throw new RuntimeException("Channel not found via parkCode");
+    }
+
+    /**
+     * 获取活跃连接数
+     */
+    public static int getActiveCount() {
+        return ACTIVE_CHANNELS.size();
     }
 }

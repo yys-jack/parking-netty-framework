@@ -1,5 +1,6 @@
 package cn.tnar.parking.netty;
 
+import cn.tnar.parking.aspect.MetricsAspect;
 import cn.tnar.parking.config.NettyProperties;
 import cn.tnar.parking.netty.handler.AuthHandler;
 import cn.tnar.parking.netty.handler.DispatcherHandler;
@@ -18,6 +19,8 @@ import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.codec.protobuf.ProtobufDecoder;
 import io.netty.handler.codec.protobuf.ProtobufEncoder;
 import io.netty.handler.timeout.IdleStateHandler;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -39,11 +42,30 @@ public class ApiServer {
     private final NettyProperties nettyProperties;
     private final AuthHandler authHandler;
     private final DispatcherHandler dispatcherHandler;
+    private final MetricsAspect metricsAspect;
+    private final MeterRegistry meterRegistry;
 
-    public ApiServer(NettyProperties nettyProperties, AuthHandler authHandler, DispatcherHandler dispatcherHandler) {
+    public ApiServer(NettyProperties nettyProperties, AuthHandler authHandler, DispatcherHandler dispatcherHandler,
+                     MetricsAspect metricsAspect, MeterRegistry meterRegistry) {
         this.nettyProperties = nettyProperties;
         this.authHandler = authHandler;
         this.dispatcherHandler = dispatcherHandler;
+        this.metricsAspect = metricsAspect;
+        this.meterRegistry = meterRegistry;
+
+        // 注册连接数指标
+        Gauge.builder("parking_netty_connections_active",
+                () -> (double) ChannelMaintainer.getActiveCount())
+            .description("Active TCP connections")
+            .register(meterRegistry);
+
+        // 设置连接回调用于指标收集
+        ChannelMaintainer.setConnectionCallback(parkCode ->
+            meterRegistry.counter("parking_netty_connections_total").increment()
+        );
+        ChannelMaintainer.setDisconnectionCallback(parkCode ->
+            meterRegistry.counter("parking_netty_disconnections_total").increment()
+        );
     }
 
     @PostConstruct
