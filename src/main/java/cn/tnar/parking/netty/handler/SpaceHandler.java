@@ -6,6 +6,7 @@ import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.RespondProto;
 import cn.tnar.parking.model.Space;
 import cn.tnar.parking.model.Transmission;
+import cn.tnar.parking.repository.space.SpaceRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -16,8 +17,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class SpaceHandler extends AbstractHandler {
 
-    public SpaceHandler(MetricsAspect metricsAspect) {
+    private final SpaceRepository spaceRepository;
+
+    public SpaceHandler(MetricsAspect metricsAspect, SpaceRepository spaceRepository) {
         super(metricsAspect);
+        this.spaceRepository = spaceRepository;
     }
 
     @Override
@@ -28,8 +32,18 @@ public class SpaceHandler extends AbstractHandler {
     @Override
     protected Respond doHandle(Transmission transmission, String parkCode) throws Exception {
         Space space = Space.parseFrom(transmission.getMessage());
+
+        // 保存车位快照到数据库
+        spaceRepository.saveSpaceSnapshot(
+            parkCode,
+            space.getTotal(),
+            space.getRemained(),
+            System.currentTimeMillis()
+        );
+
         log.info("SpaceHandler 接收车位上报，parkCode: {}, 总车位：{}, 剩余车位：{}",
                 parkCode, space.getTotal(), space.getRemained());
+
         return RespondProto.success();
     }
 }

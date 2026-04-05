@@ -4,12 +4,20 @@ import cn.tnar.parking.aspect.MetricsAspect;
 import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.Space;
 import cn.tnar.parking.model.Transmission;
+import cn.tnar.parking.repository.space.SpaceRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * SpaceHandler 单元测试
@@ -18,11 +26,13 @@ class SpaceHandlerTest {
 
     private SpaceHandler handler;
     private MetricsAspect metricsAspect;
+    private SpaceRepository spaceRepository;
 
     @BeforeEach
     void setUp() {
         metricsAspect = new MetricsAspect(new SimpleMeterRegistry());
-        handler = new SpaceHandler(metricsAspect);
+        spaceRepository = mock(SpaceRepository.class);
+        handler = new SpaceHandler(metricsAspect, spaceRepository);
     }
 
     @Test
@@ -47,6 +57,14 @@ class SpaceHandlerTest {
                 assertEquals(Respond.RespondCode.CODE_SUCCESS, respond.getCode());
             })
             .verifyComplete();
+
+        // Verify saveSpaceSnapshot was called
+        verify(spaceRepository, times(1)).saveSpaceSnapshot(
+            anyString(),
+            anyInt(),
+            anyInt(),
+            anyLong()
+        );
     }
 
     @Test
