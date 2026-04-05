@@ -222,7 +222,43 @@ networks:
 
 ---
 
-## 5. Nginx 配置
+## 5. 监控部署
+
+### 5.1 独立监控模式
+
+使用 `docker-compose.monitoring.yml` 部署 Prometheus 和 Grafana:
+
+```bash
+# 启动监控栈
+docker compose -f docker-compose.monitoring.yml up -d
+
+# 查看状态
+docker compose -f docker-compose.monitoring.yml ps
+```
+
+### 5.2 访问地址
+
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| Prometheus | http://localhost:9090 | 指标查询和告警管理 |
+| Grafana | http://localhost:3000 | 仪表板展示 (admin/admin) |
+
+### 5.3 配置说明
+
+**prometheus.yml**:
+- 抓取间隔：15 秒
+- 目标：`host.docker.internal:8081`
+- 端点：`/actuator/prometheus`
+
+**告警规则**:
+- 高连接数（>1000 警告，>5000 严重）
+- 高认证失败率（>10%）
+- 高消息延迟（P99 >500ms 警告，>1s 严重）
+- 应用下线
+
+---
+
+## 6. Nginx 配置
 
 ### 5.1 配置文件
 
