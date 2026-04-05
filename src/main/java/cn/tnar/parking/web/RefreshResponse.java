@@ -34,5 +34,21 @@ public class RefreshResponse {
         public Data(int refreshed) {
             this.refreshed = refreshed;
         }
+
+        public int getRefreshed() {
+            return refreshed;
+        }
+    }
+
+    public int getCode() {
+        return code;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public Data getData() {
+        return data;
     }
 }
