@@ -9,6 +9,9 @@
 | [开发指南](docs/DEVELOPMENT.md) | 开发环境配置、日常开发流程、代码规范 |
 | [测试体系](docs/TESTING.md) | 单元测试、集成测试、Docker 测试、Git Hooks |
 | [Docker 部署](docs/DOCKER_DEPLOYMENT.md) | 容器化部署、负载均衡、扩缩容 |
+| [生产部署](docs/PRODUCTION_DEPLOYMENT.md) | 生产环境部署、监控告警、故障排查 |
+| [监控指南](docs/MONITORING.md) | 监控指标、Prometheus、Grafana 仪表板 |
+| [响应式架构](docs/RESPONSIVE_ARCHITECTURE.md) | 响应式编程、Reactive Repository |
 
 ## 核心特性
 
@@ -17,6 +20,8 @@
 - **完整认证机制** - Serial/Secret 双向认证，支持 Redis/数据库存储
 - **心跳检测** - 空闲连接自动断开，资源高效利用
 - **消息自动分派** - 基于消息类型的 Handler 路由机制
+- **监控报警系统** - Micrometer + Prometheus + Grafana，实时监控连接数、认证、业务指标
+- **响应式架构** - 基于 Project Reactor，支持 Redis/MySQL/JDBC 多种存储
 - **分层测试体系** - 快速测试 → 完整测试 → Docker 测试
 - **代码质量保障** - JaCoCo 覆盖率 + Checkstyle 代码风格检查
 - **Git Hooks** - 提交前自动测试，防止问题代码入库
@@ -32,7 +37,9 @@ parking-netty-framework/
 │   │   ├── RedisProperties.java       # Redis 配置属性
 │   │   ├── JdbcProperties.java        # JDBC 配置属性
 │   │   ├── JacksonProtobufSupport.java
-│   │   └── NettyProperties.java       # Netty 配置属性
+│   │   ├── NettyProperties.java       # Netty 配置属性
+│   │   ├── MetricsConfig.java         # 指标配置
+│   │   └── ...
 │   ├── framework/                     # 框架核心
 │   │   └── AbstractHandler.java       # 抽象处理器基类
 │   ├── netty/                         # Netty 核心
@@ -58,10 +65,21 @@ parking-netty-framework/
 │   │   └── AuthRefreshController.java     # 缓存刷新 API
 │   ├── task/
 │   │   └── HandlerRegistry.java       # Handler 注册表
+│   ├── aspect/                        # AOP 切面
+│   │   └── MetricsAspect.java         # 指标收集切面
 │   └── model/                         # 模型类
 │       ├── RespondProto.java          # 响应工厂 (手写)
 │       ├── BusinessException.java     # 业务异常
 │       └── ExistedFutureException.java
+├── prometheus/
+│   ├── prometheus.yml                 # Prometheus 配置
+│   └── alert_rules.yml                # 告警规则
+├── grafana/
+│   ├── provisioning/
+│   │   ├── datasources/
+│   │   └── dashboards/
+│   └── dashboards/
+├── docker-compose.monitoring.yml      # 独立监控部署
 ├── src/main/proto/
 │   └── message.proto                  # Protobuf 定义
 ├── src/main/resources/
@@ -437,6 +455,7 @@ open build/reports/tests/test/index.html
 | JDK | 21 (Alibaba Dragonwell 21.0.10) | Java 运行环境 |
 | Netty | 4.1.108.Final | TCP 服务器 |
 | Protobuf | 3.25.3 | 序列化 |
+| micrometer-registry-prometheus | 1.12.4 | Prometheus 指标收集 |
 | spring-boot-starter-data-redis-reactive | 3.2.4 | 响应式 Redis |
 | mysql-connector-j | 8.x | MySQL 驱动 |
 | h2 | 2.2.224 | 嵌入式数据库 |
