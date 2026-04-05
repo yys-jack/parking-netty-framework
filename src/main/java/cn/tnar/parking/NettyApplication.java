@@ -3,7 +3,6 @@ package cn.tnar.parking;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
-import org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
@@ -12,7 +11,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * 排除默认 Redis 自动配置，由 RedisConnectionConfig 按条件启用
  * </p>
  */
-@SpringBootApplication(exclude = {RedisAutoConfiguration.class, RedisRepositoriesAutoConfiguration.class})
+@SpringBootApplication(exclude = {RedisAutoConfiguration.class})
 @EnableScheduling
 public class NettyApplication {
 

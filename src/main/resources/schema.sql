@@ -11,3 +11,6 @@ CREATE TABLE IF NOT EXISTS auth_info (
 );
 CREATE INDEX IF NOT EXISTS idx_serial ON auth_info(serial);
 CREATE INDEX IF NOT EXISTS idx_park_code ON auth_info(park_code);
+
+-- Insert test data (H2 compatible)
+MERGE INTO auth_info (serial, park_code, secret, enabled) KEY (serial) VALUES ('TEST-001', 'PARK001', 'test-secret', TRUE);
