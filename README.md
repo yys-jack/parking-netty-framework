@@ -20,8 +20,9 @@
 - **完整认证机制** - Serial/Secret 双向认证，支持 Redis/数据库存储
 - **心跳检测** - 空闲连接自动断开，资源高效利用
 - **消息自动分派** - 基于消息类型的 Handler 路由机制
+- **响应式架构** - 基于 Project Reactor，Handler 返回 `Mono<Respond>`
+- **分层调度器** - 数据库/外部 API/CPU 计算隔离，支持超时控制
 - **监控报警系统** - Micrometer + Prometheus + Grafana，实时监控连接数、认证、业务指标
-- **响应式架构** - 基于 Project Reactor，支持 Redis/MySQL/JDBC 多种存储
 - **分层测试体系** - 快速测试 → 完整测试 → Docker 测试
 - **代码质量保障** - JaCoCo 覆盖率 + Checkstyle 代码风格检查
 - **Git Hooks** - 提交前自动测试，防止问题代码入库
@@ -39,21 +40,22 @@ parking-netty-framework/
 │   │   ├── JacksonProtobufSupport.java
 │   │   ├── NettyProperties.java       # Netty 配置属性
 │   │   ├── MetricsConfig.java         # 指标配置
-│   │   └── ...
+│   │   ├── SchedulerConfig.java       # 调度器配置（响应式）
+│   │   ├── SchedulerProperties.java   # 调度器配置属性
+│   │   └── SchedulerMetrics.java      # 调度器指标监控
 │   ├── framework/                     # 框架核心
-│   │   └── AbstractHandler.java       # 抽象处理器基类
+│   │   └── AbstractHandler.java       # 抽象处理器基类（响应式）
 │   ├── netty/                         # Netty 核心
 │   │   ├── ApiServer.java             # Netty 服务器
 │   │   ├── ChannelMaintainer.java     # Channel 管理器
-│   │   ├── OperationResultFuture.java # 异步操作 Future
 │   │   └── handler/
 │   │       ├── AuthHandler.java       # 认证处理器（响应式）
-│   │       ├── DispatcherHandler.java # 消息分派器
+│   │       ├── DispatcherHandler.java # 消息分派器（响应式）
 │   │       ├── DemoHandler.java       # 演示 Handler
 │   │       ├── SpaceHandler.java      # 车位上报 Handler
 │   │       ├── CarInHandler.java      # 车辆入场 Handler
 │   │       ├── CarOutHandler.java     # 车辆出场 Handler
-│   │       └── Handler.java           # Handler 接口
+│   │       └── Handler.java           # Handler 接口（响应式）
 │   ├── repository/                    # 数据访问层（响应式）
 │   │   └── auth/
 │   │       ├── ReactiveAuthRepository.java  # 响应式仓库接口
