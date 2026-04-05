@@ -208,6 +208,20 @@ class JdbcSpaceRepositoryTest {
     }
 
     @Test
+    void saveSpaceSnapshot_throwsWhenParkCodeNull() {
+        // Given
+        String parkCode = null;
+        int total = 100;
+        int remained = 50;
+        long spaceTime = System.currentTimeMillis();
+
+        // When & Then
+        assertThrows(IllegalArgumentException.class, () -> {
+            spaceRepository.saveSpaceSnapshot(parkCode, total, remained, spaceTime);
+        });
+    }
+
+    @Test
     void saveSpaceSnapshot_throwsWhenTotalZero() {
         // Given
         String parkCode = "PARK001";
