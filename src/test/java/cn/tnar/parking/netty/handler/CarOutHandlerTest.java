@@ -1,8 +1,10 @@
 package cn.tnar.parking.netty.handler;
 
+import cn.tnar.parking.aspect.MetricsAspect;
 import cn.tnar.parking.model.CarOut;
 import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.Transmission;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -15,10 +17,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class CarOutHandlerTest {
 
     private CarOutHandler handler;
+    private MetricsAspect metricsAspect;
 
     @BeforeEach
     void setUp() {
-        handler = new CarOutHandler();
+        metricsAspect = new MetricsAspect(new SimpleMeterRegistry());
+        handler = new CarOutHandler(metricsAspect);
     }
 
     @Test

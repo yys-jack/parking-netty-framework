@@ -1,5 +1,6 @@
 package cn.tnar.parking.netty.handler;
 
+import cn.tnar.parking.aspect.MetricsAspect;
 import cn.tnar.parking.framework.AbstractHandler;
 import cn.tnar.parking.model.CarIn;
 import cn.tnar.parking.model.Respond;
@@ -14,6 +15,10 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 public class CarInHandler extends AbstractHandler {
+
+    public CarInHandler(MetricsAspect metricsAspect) {
+        super(metricsAspect);
+    }
 
     @Override
     public Transmission.MessageType processedType() {

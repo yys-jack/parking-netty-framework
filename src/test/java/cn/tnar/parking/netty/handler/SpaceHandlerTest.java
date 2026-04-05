@@ -1,11 +1,13 @@
 package cn.tnar.parking.netty.handler;
 
+import cn.tnar.parking.aspect.MetricsAspect;
 import cn.tnar.parking.framework.AbstractHandler;
 import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.RespondProto;
 import cn.tnar.parking.model.Space;
 import cn.tnar.parking.model.Transmission;
 import com.google.protobuf.ByteString;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -20,10 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class SpaceHandlerTest {
 
     private SpaceHandler handler;
+    private MetricsAspect metricsAspect;
 
     @BeforeEach
     void setUp() {
-        handler = new SpaceHandler();
+        metricsAspect = new MetricsAspect(new SimpleMeterRegistry());
+        handler = new SpaceHandler(metricsAspect);
     }
 
     @Test
