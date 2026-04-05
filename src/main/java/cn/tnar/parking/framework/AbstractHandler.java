@@ -7,7 +7,6 @@ import cn.tnar.parking.model.Transmission;
 import cn.tnar.parking.netty.handler.Handler;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 
@@ -56,8 +55,7 @@ public abstract class AbstractHandler implements Handler {
                 log.error("[ERROR] Handler 处理超时或失败，parkCode={}, type={}",
                     parkCode, transmission.getType(), error);
             })
-            .onErrorResume(e -> Mono.just(RespondProto.failure("处理超时：" + e.getMessage())))
-            .subscribeOn(Schedulers.boundedElastic());
+            .onErrorResume(e -> Mono.just(RespondProto.failure("处理超时：" + e.getMessage())));
     }
 
     /**
