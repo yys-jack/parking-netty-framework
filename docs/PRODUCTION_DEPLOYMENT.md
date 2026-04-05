@@ -500,3 +500,45 @@ cp /var/lib/redis/appendonly.aof /backup/appendonly-$(date +%Y%m%d).aof
 | `docs/DOCKER_DEPLOYMENT.md` | Docker 部署指南 |
 | `scripts/start.sh` | 启动脚本 |
 | `scripts/stop.sh` | 停止脚本 |
+
+---
+
+## 13. 监控告警
+
+### 13.1 Prometheus 配置
+
+配置文件位置：`prometheus/prometheus.yml`
+
+```yaml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'parking-netty'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['your-server:8081']
+```
+
+### 13.2 Grafana 仪表板
+
+访问 `http://localhost:3000`，登录（admin/admin）后查看：
+
+1. **TCP 连接概览** - 活跃连接数、连接趋势
+2. **认证统计** - 成功/失败对比、失败率趋势
+3. **消息处理** - 处理速率、延迟分布（P50/P90/P99）
+4. **告警状态** - 当前告警列表
+
+### 13.3 告警规则
+
+配置文件位置：`prometheus/alert_rules.yml`
+
+| 告警名称 | 条件 | 严重度 |
+|---------|------|--------|
+| HighConnectionCount | 连接数 > 1000 (5m) | warning |
+| CriticalConnectionCount | 连接数 > 5000 (5m) | critical |
+| HighAuthFailureRate | 失败率 > 10% (5m) | warning |
+| HighMessageLatency | P99 延迟 > 500ms (5m) | warning |
+| CriticalMessageLatency | P99 延迟 > 1s (5m) | critical |
+| TargetDown | 应用下线 (1m) | critical |
