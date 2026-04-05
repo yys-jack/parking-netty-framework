@@ -159,6 +159,45 @@ if (messageType == TYPE_AUTHENTICATE) {
 
 **认证超时**: 10 秒（可配置）
 
+### 3.5 配置类
+
+**AuthProperties** - 认证配置属性：
+
+```java
+@ConfigurationProperties("auth")
+public class AuthProperties {
+    private Storage storage = new Storage();
+    private Redis redis = new Redis();
+    private Jdbc jdbc = new Jdbc();
+    // getters/setters
+}
+```
+
+**RedisProperties** - Redis 配置属性：
+
+```java
+public static class Redis {
+    private String host = "localhost";
+    private int port = 6379;
+    private String password;
+    private int database = 0;
+    private String keyPrefix = "parking:auth:";
+    // getters/setters
+}
+```
+
+**JdbcProperties** - JDBC 配置属性：
+
+```java
+public static class Jdbc {
+    private String url;
+    private String username;
+    private String password;
+    private String table = "auth_info";
+    // getters/setters
+}
+```
+
 ---
 
 ## 4. 开发流程
@@ -274,42 +313,141 @@ ls build/generated/source/proto/main/java/cn/tnar/parking/model/
 
 ---
 
-### 4.3 修改认证逻辑
+### 4.3 实现响应式认证存储
 
-**场景**: 添加 Redis 认证存储
+**场景**: 添加 Redis 响应式认证存储
 
-**步骤 1**: 实现 AuthRepository 接口
+**步骤 1**: 实现 ReactiveAuthRepository 接口
 
 ```java
 @Repository
-public class RedisAuthRepository implements AuthRepository {
+@RequiredArgsConstructor
+public class RedisAuthRepository implements ReactiveAuthRepository {
     
-    @Autowired
-    private StringRedisTemplate redisTemplate;
+    private final RedisTemplate<String, String> redisTemplate;
+    private final String keyPrefix;
     
     @Override
-    public AuthInfo findBySerial(String serial) {
-        String json = redisTemplate.opsForValue().get("auth:" + serial);
-        if (json == null) {
-            return null;
-        }
-        return JSON.parseObject(json, AuthInfo.class);
+    public Mono<AuthInfo> findBySerial(String serial) {
+        String key = keyPrefix + serial;
+        return redisTemplate.opsForHash()
+            .multiGet(key, Arrays.asList("parkCode", "secret"))
+            .flatMap(values -> {
+                if (values == null || values.isEmpty()) {
+                    return Mono.empty(); // 返回空 Mono，而非 null
+                }
+                AuthInfo authInfo = new AuthInfo(
+                    serial,
+                    values.get(0), // parkCode
+                    values.get(1)  // secret
+                );
+                return Mono.just(authInfo);
+            });
+    }
+    
+    @Override
+    public Mono<Boolean> validate(String serial, String secret) {
+        return findBySerial(serial)
+            .map(authInfo -> authInfo.getSecret().equals(secret))
+            .defaultIfEmpty(false);
+    }
+    
+    /**
+     * 服务启动时从数据库加载数据到 Redis
+     */
+    @PostConstruct
+    public void loadFromDatabase() {
+        // 从 JDBC 加载数据到 Redis
     }
 }
 ```
 
-**步骤 2**: 切换实现
+**步骤 2**: 切换存储类型
 
 `application.yml`:
 ```yaml
 auth:
-  type: redis  # 从 memory 改为 redis
-  redis:
-    host: localhost
-    port: 6379
+  storage:
+    type: redis  # 从 in-memory 改为 redis
 ```
 
----
+**关键要点**:
+- 返回 `Mono<T>` 而非直接返回值
+- 使用 `Mono.empty()` 表示空值，而非 `null`
+- 使用 `flatMap()` 进行链式调用
+- 使用 `defaultIfEmpty()` 提供默认值
+
+### 4.4 响应式编程指南
+
+本项目使用 Project Reactor 实现响应式编程。
+
+**核心概念**:
+
+1. **Mono<T>** - 表示 0 或 1 个异步结果
+
+```java
+Mono<AuthInfo> result = repository.findBySerial("TEST-001");
+```
+
+2. **空值处理** - 使用 `Mono.empty()` 而非 `null`
+
+```java
+// 正确
+return Mono.empty();
+
+// 错误 - 会导致 NullPointerException
+return Mono.just(null);
+```
+
+3. **阻塞操作隔离** - JDBC 等阻塞操作使用 `Schedulers.boundedElastic()`
+
+```java
+@Override
+public Mono<AuthInfo> findBySerial(String serial) {
+    return Mono.fromCallable(() -> {
+        // 阻塞式 JDBC 调用
+        return jdbcTemplate.queryForObject(...);
+    })
+    .subscribeOn(Schedulers.boundedElastic()); // 隔离到弹性线程池
+}
+```
+
+4. **异步结果处理** - 使用 `subscribe()` 处理最终结果
+
+```java
+authRepository.validate(serial, secret)
+    .subscribe(
+        isValid -> {
+            // 验证成功
+            ctx.writeAndFlush(response);
+        },
+        error -> {
+            // 处理异常
+            log.error("Validation failed", error);
+        }
+    );
+```
+
+**测试响应式代码**:
+
+使用 `StepVerifier` 测试 `Mono` 和 `Flux`:
+
+```java
+@Test
+void findBySerial_whenExists_returnsAuthInfo() {
+    Mono<AuthInfo> result = repository.findBySerial("TEST-001");
+    StepVerifier.create(result)
+        .assertNext(auth -> assertEquals("PARK001", auth.getParkCode()))
+        .verifyComplete();
+}
+
+@Test
+void findBySerial_whenNotExists_returnsEmpty() {
+    Mono<AuthInfo> result = repository.findBySerial("NOT-EXISTS");
+    StepVerifier.create(result)
+        .verifyComplete(); // 验证 Mono.empty()
+}
+```
 
 ## 5. 测试
 
