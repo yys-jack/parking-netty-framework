@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS auth_info (
     INDEX idx_park_code (park_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='认证信息表';
 
-INSERT INTO auth_info(serial,park_code,secret,enabled) VALUES ('TEST-001', 'PARK001', 'test-secret', 1);
+INSERT IGNORE INTO auth_info(serial,park_code,secret,enabled) VALUES ('TEST-001', 'PARK001', 'test-secret', 1);
 
 -- Space snapshot table for parking space status tracking
 CREATE TABLE IF NOT EXISTS space_snapshot (
