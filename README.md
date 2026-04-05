@@ -29,6 +29,8 @@ parking-netty-framework/
 │   ├── NettyApplication.java          # Spring Boot 应用入口
 │   ├── config/                        # 配置类
 │   │   ├── AuthProperties.java        # 认证配置属性
+│   │   ├── RedisProperties.java       # Redis 配置属性
+│   │   ├── JdbcProperties.java        # JDBC 配置属性
 │   │   ├── JacksonProtobufSupport.java
 │   │   └── NettyProperties.java       # Netty 配置属性
 │   ├── framework/                     # 框架核心
@@ -38,18 +40,22 @@ parking-netty-framework/
 │   │   ├── ChannelMaintainer.java     # Channel 管理器
 │   │   ├── OperationResultFuture.java # 异步操作 Future
 │   │   └── handler/
-│   │       ├── AuthHandler.java       # 认证处理器
+│   │       ├── AuthHandler.java       # 认证处理器（响应式）
 │   │       ├── DispatcherHandler.java # 消息分派器
 │   │       ├── DemoHandler.java       # 演示 Handler
 │   │       ├── SpaceHandler.java      # 车位上报 Handler
 │   │       ├── CarInHandler.java      # 车辆入场 Handler
 │   │       ├── CarOutHandler.java     # 车辆出场 Handler
 │   │       └── Handler.java           # Handler 接口
-│   ├── repository/                    # 数据访问层
+│   ├── repository/                    # 数据访问层（响应式）
 │   │   └── auth/
-│   │       ├── AuthRepository.java    # 认证仓库接口
-│   │       ├── AuthInfo.java          # 认证信息实体
-│   │       └── InMemoryAuthRepository.java  # 内存实现
+│   │       ├── ReactiveAuthRepository.java  # 响应式仓库接口
+│   │       ├── AuthInfo.java                # 认证信息实体
+│   │       ├── InMemoryAuthRepository.java  # 内存实现
+│   │       ├── RedisAuthRepository.java     # Redis 响应式实现
+│   │       └── JdbcAuthRepository.java      # JDBC 响应式实现
+│   ├── web/                         # Web 控制器
+│   │   └── AuthRefreshController.java     # 缓存刷新 API
 │   ├── task/
 │   │   └── HandlerRegistry.java       # Handler 注册表
 │   └── model/                         # 模型类
@@ -60,7 +66,9 @@ parking-netty-framework/
 │   └── message.proto                  # Protobuf 定义
 ├── src/main/resources/
 │   ├── application.yml                # 应用配置
-│   └── auth.yml                       # 认证配置
+│   ├── auth.yml                       # 认证配置
+│   ├── schema.sql                     # H2 数据库 schema
+│   └── schema-mysql.sql               # MySQL 数据库 schema
 ├── src/test/java/cn/tnar/parking/
 │   ├── client/                        # 测试客户端
 │   ├── integration/                   # 集成测试
@@ -287,7 +295,7 @@ auth:
 
 ### 认证存储配置
 
-支持三种认证存储方式：
+支持三种认证存储方式（响应式架构）：
 
 ```yaml
 auth:
@@ -297,11 +305,21 @@ auth:
   redis:
     host: localhost
     port: 6379
+    key-prefix: 'parking:auth:'
   jdbc:
     url: jdbc:mysql://localhost:3306/parking
     username: root
     password: xxx
+    table: auth_info
 ```
+
+**存储类型说明**:
+- `in-memory`: 内存存储，开发/测试环境使用
+- `redis`: Redis 响应式存储，生产环境推荐
+- `jdbc`: MySQL 数据库存储，备用方案
+
+**服务启动自动加载** (redis 模式):
+服务启动时自动从数据库加载认证数据到 Redis 缓存
 
 **刷新缓存 API** (仅 redis 模式):
 ```bash
@@ -318,8 +336,6 @@ curl -X POST -H "X-Admin-Token: your-token" http://localhost:8080/api/auth/refre
   }
 }
 ```
-
-生产环境可使用 Redis 或数据库实现 `AuthRepository` 接口。
 
 **Spring Boot 3.x 迁移说明**：
 - `@PostConstruct` / `@PreDestroy`: 从 `javax.annotation` 迁移到 `jakarta.annotation`
@@ -407,18 +423,26 @@ open build/reports/tests/test/index.html
 - `OperationResultFutureTest` - 异步 Future 测试
 - `SpaceHandlerTest`, `CarInHandlerTest`, `CarOutHandlerTest`, `DemoHandlerTest` - Handler 单元测试
 - `AuthIntegrationTest` - 认证集成测试
+- `InMemoryAuthRepositoryTest`, `RedisAuthRepositoryTest`, `JdbcAuthRepositoryTest` - Repository 测试
+- `AuthRefreshControllerTest` - REST API 测试
+
+**总计**: 43 个测试，100% 通过率
 
 ## 依赖
 
-| 依赖 | 版本 |
-|------|------|
-| Spring Boot | 3.2.4 |
-| Spring Framework | 6.x |
-| JDK | 21 (Alibaba Dragonwell 21.0.10) |
-| Netty | 4.1.108.Final |
-| Protobuf | 3.25.3 |
-| Lombok | - |
-| JUnit | 5 |
+| 依赖 | 版本 | 说明 |
+|------|------|------|
+| Spring Boot | 3.2.4 | 应用框架 |
+| Spring Framework | 6.x | Spring 核心 |
+| JDK | 21 (Alibaba Dragonwell 21.0.10) | Java 运行环境 |
+| Netty | 4.1.108.Final | TCP 服务器 |
+| Protobuf | 3.25.3 | 序列化 |
+| spring-boot-starter-data-redis-reactive | 3.2.4 | 响应式 Redis |
+| mysql-connector-j | 8.x | MySQL 驱动 |
+| h2 | 2.2.224 | 嵌入式数据库 |
+| testcontainers | 1.19.x | 集成测试 |
+| Lombok | - | 代码简化 |
+| JUnit | 5 | 测试框架 |
 
 ## 故障排查
 
