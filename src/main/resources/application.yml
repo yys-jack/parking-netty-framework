@@ -25,3 +25,19 @@ management:
     web:
       exposure:
         include: health,info
+
+auth:
+  storage:
+    type: in-memory  # in-memory | redis | jdbc
+    admin-token: change-me-in-production
+  redis:
+    host: localhost
+    port: 6379
+    password: ${REDIS_PASSWORD:}
+    database: 0
+    key-prefix: parking:auth:
+  jdbc:
+    url: jdbc:mysql://localhost:3306/parking?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
+    username: root
+    password: ${DB_PASSWORD:}
+    table: auth_info
