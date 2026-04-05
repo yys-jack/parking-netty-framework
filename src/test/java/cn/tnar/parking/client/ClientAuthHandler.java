@@ -4,16 +4,18 @@ import cn.tnar.parking.model.Authenticate;
 import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.Transmission;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * 客户端认证处理器
+ * 注意：继承 ChannelInboundHandlerAdapter 而非 SimpleChannelInboundHandler，
+ * 因为我们需要手动控制消息引用释放，避免在 fireChannelRead 前消息被自动释放
  */
 @Slf4j
-public class ClientAuthHandler extends SimpleChannelInboundHandler<Transmission> {
+public class ClientAuthHandler extends ChannelInboundHandlerAdapter {
 
     private final String serial;
     private final String secret;
@@ -25,11 +27,17 @@ public class ClientAuthHandler extends SimpleChannelInboundHandler<Transmission>
     }
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, Transmission msg) throws Exception {
-        log.info("ClientAuthHandler received message type: {}", msg.getType());
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        if (!(msg instanceof Transmission)) {
+            ctx.fireChannelRead(msg);
+            return;
+        }
 
-        if (msg.getType() == Transmission.MessageType.TYPE_RESPOND) {
-            Respond respond = Respond.parseFrom(msg.getMessage());
+        Transmission transmission = (Transmission) msg;
+        log.info("ClientAuthHandler received message type: {}", transmission.getType());
+
+        if (transmission.getType() == Transmission.MessageType.TYPE_RESPOND) {
+            Respond respond = Respond.parseFrom(transmission.getMessage());
             log.info("Received response: code={}, number={}", respond.getCode(), respond.getCode().getNumber());
 
             if (!authenticated) {
@@ -38,8 +46,7 @@ public class ClientAuthHandler extends SimpleChannelInboundHandler<Transmission>
                     log.info("Authentication successful!");
 
                     // 认证成功后，移除认证处理器，添加业务处理器
-                    ctx.pipeline().remove("auth");
-                    ctx.pipeline().addLast(new ClientHandler());
+                    ctx.pipeline().replace("auth","client",new ClientHandler());
 
                     // 重新触发消息处理，让 ClientHandler 处理这个响应
                     ctx.fireChannelRead(msg);
@@ -48,6 +55,9 @@ public class ClientAuthHandler extends SimpleChannelInboundHandler<Transmission>
                     ctx.close();
                 }
             }
+        } else {
+            // 非响应消息，传递给下游处理器
+            ctx.fireChannelRead(msg);
         }
     }
 

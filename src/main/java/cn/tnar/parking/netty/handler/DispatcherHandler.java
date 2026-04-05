@@ -46,6 +46,8 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
 
         if (!Transmission.MessageType.TYPE_RESPOND.equals(msg.getType())) {
             Handler handler = handlerRegistry.getHandler(msg.getType());
+            log.debug("[DISPATCH] parkCode={}, type={}, handler={}", parkCode, msg.getType(),
+                handler != null ? handler.getClass().getSimpleName() : "null");
 
             Mono<Respond> responseMono;
             if (handler == null) {
@@ -62,15 +64,18 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
                 .publishOn(Schedulers.immediate())
                 .subscribe(
                     respond -> {
-                        Transmission response = Transmission.newBuilder()
-                            .setID(msg.getID())
-                            .setType(Transmission.MessageType.TYPE_RESPOND)
-                            .setMessage(respond.toByteString())
-                            .build();
-
-                        if (ctx.channel().isActive()) {
-                            ctx.writeAndFlush(response);
-                        }
+                        // 切换回 EventLoop 线程执行写操作，确保经过编码器
+                        ctx.executor().execute(() -> {
+                            if (ctx.channel().isActive()) {
+                                // 使用 channel().writeAndFlush() 而不是 ctx.writeAndFlush()，
+                                // 确保从管道头部开始传递，经过所有编码器
+                                ctx.channel().writeAndFlush(Transmission.newBuilder()
+                                    .setID(msg.getID())
+                                    .setType(Transmission.MessageType.TYPE_RESPOND)
+                                    .setMessage(respond.toByteString())
+                                    .build());
+                            }
+                        });
                     },
                     error -> {
                         log.error("[ERROR] 处理消息失败，parkCode={}, type={}, id={}, error={}",
@@ -84,7 +89,7 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
                             .build();
 
                         if (ctx.channel().isActive()) {
-                            ctx.writeAndFlush(errorResponse);
+                            ctx.channel().writeAndFlush(errorResponse);
                         }
                     }
                 );

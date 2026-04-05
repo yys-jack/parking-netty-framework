@@ -146,7 +146,7 @@ public class NettyClient {
             client.sendCarInMessage("陕 A12345", "ENTRANCE-01");
 
             // 保持连接一段时间
-            TimeUnit.SECONDS.sleep(10);
+            TimeUnit.SECONDS.sleep(90);
 
         } finally {
             client.disconnect();

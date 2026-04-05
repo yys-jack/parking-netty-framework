@@ -41,11 +41,6 @@ public class ClientHandler extends SimpleChannelInboundHandler<Transmission> {
     }
 
     @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        log.info("Connection closed by server");
-    }
-
-    @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         log.error("Exception occurred", cause);
         ctx.close();
