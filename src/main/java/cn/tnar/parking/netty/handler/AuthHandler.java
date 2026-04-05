@@ -1,5 +1,6 @@
 package cn.tnar.parking.netty.handler;
 
+import cn.tnar.parking.aspect.MetricsAspect;
 import cn.tnar.parking.model.Authenticate;
 import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.RespondProto;
@@ -25,9 +26,11 @@ import reactor.core.publisher.Mono;
 public class AuthHandler extends SimpleChannelInboundHandler<Transmission> {
 
     private final ReactiveAuthRepository authRepository;
+    private final MetricsAspect metricsAspect;
 
-    public AuthHandler(ReactiveAuthRepository authRepository) {
+    public AuthHandler(ReactiveAuthRepository authRepository, MetricsAspect metricsAspect) {
         this.authRepository = authRepository;
+        this.metricsAspect = metricsAspect;
     }
 
     @Override
@@ -50,26 +53,35 @@ public class AuthHandler extends SimpleChannelInboundHandler<Transmission> {
             return;
         }
 
+        // Record auth start time
+        long authStart = System.nanoTime();
+        String serial = authenticate.getSerial();
+
         // Reactive authentication flow
         authRepository.validate(authenticate.getSerial(), authenticate.getSecret())
                 .subscribe(
-                        isValid -> handleValid(ctx, msg, authenticate, channel),
-                        error -> handleError(ctx, channel, error)
+                        isValid -> handleValid(ctx, msg, authenticate, channel, authStart, serial),
+                        error -> handleError(ctx, channel, error, authStart, serial)
                 );
     }
 
     private void handleValid(ChannelHandlerContext ctx, Transmission msg,
-                             Authenticate authenticate, Channel channel) {
+                             Authenticate authenticate, Channel channel, long authStart, String serial) {
         authRepository.findBySerial(authenticate.getSerial())
                 .subscribe(
                         authInfo -> {
+                            long duration = System.nanoTime() - authStart;
+                            double durationSeconds = duration / 1_000_000_000.0;
+
                             if (authInfo == null) {
                                 log.error("Auth failed: serial not found");
+                                metricsAspect.recordAuthFailure(serial, "serial_not_found", durationSeconds);
                                 channel.close();
                                 return;
                             }
 
                             String parkCode = authInfo.getParkCode();
+                            metricsAspect.recordAuthSuccess(parkCode, durationSeconds);
                             ChannelMaintainer.add(parkCode, channel);
                             channel.attr(ChannelMaintainer.PARK_CODE_ATTR).setIfAbsent(parkCode);
 
@@ -89,12 +101,19 @@ public class AuthHandler extends SimpleChannelInboundHandler<Transmission> {
                                 removeAuthHandler(ctx.pipeline());
                             });
                         },
-                        error -> handleError(ctx, channel, error)
+                        error -> {
+                            long duration = System.nanoTime() - authStart;
+                            double durationSeconds = duration / 1_000_000_000.0;
+                            handleError(ctx, channel, error, authStart, serial);
+                        }
                 );
     }
 
-    private void handleError(ChannelHandlerContext ctx, Channel channel, Throwable error) {
+    private void handleError(ChannelHandlerContext ctx, Channel channel, Throwable error, long authStart, String serial) {
+        long duration = System.nanoTime() - authStart;
+        double durationSeconds = duration / 1_000_000_000.0;
         log.error("Authentication error: " + error.getMessage());
+        metricsAspect.recordAuthFailure(serial, "error: " + error.getMessage(), durationSeconds);
         channel.close();
     }
 

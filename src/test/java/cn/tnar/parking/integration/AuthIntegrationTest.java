@@ -1,5 +1,6 @@
 package cn.tnar.parking.integration;
 
+import cn.tnar.parking.aspect.MetricsAspect;
 import cn.tnar.parking.config.AuthProperties;
 import cn.tnar.parking.model.Authenticate;
 import cn.tnar.parking.model.Respond;
@@ -10,6 +11,7 @@ import cn.tnar.parking.netty.handler.DispatcherHandler;
 import cn.tnar.parking.repository.auth.InMemoryAuthRepository;
 import cn.tnar.parking.repository.auth.ReactiveAuthRepository;
 import cn.tnar.parking.task.HandlerRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.timeout.IdleStateHandler;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,9 +37,14 @@ class AuthIntegrationTest {
     private ReactiveAuthRepository authRepository;
     private AuthHandler authHandler;
     private DispatcherHandler dispatcherHandler;
+    private SimpleMeterRegistry registry;
+    private MetricsAspect metricsAspect;
 
     @BeforeEach
     void setUp() {
+        registry = new SimpleMeterRegistry();
+        metricsAspect = new MetricsAspect(registry);
+
         // 创建测试用认证配置
         AuthProperties properties = new AuthProperties();
         AuthProperties.AuthEntry entry = new AuthProperties.AuthEntry();
@@ -47,7 +54,7 @@ class AuthIntegrationTest {
         properties.getEntries().add(entry);
 
         authRepository = new InMemoryAuthRepository(properties);
-        authHandler = new AuthHandler(authRepository);
+        authHandler = new AuthHandler(authRepository, metricsAspect);
         dispatcherHandler = new DispatcherHandler(handlerRegistry);
     }
 
