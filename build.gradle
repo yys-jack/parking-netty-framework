@@ -54,6 +54,7 @@ dependencies {
 
     // Test
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
 
     // Redis (Reactive)
     implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
