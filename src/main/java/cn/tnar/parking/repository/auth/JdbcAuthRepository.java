@@ -5,7 +5,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 
@@ -30,8 +29,7 @@ public class JdbcAuthRepository implements ReactiveAuthRepository {
                             new AuthInfo(rs.getString("serial"), rs.getString("park_code"), rs.getString("secret")),
                             serial);
                     return result.isEmpty() ? null : result.get(0);
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+                });
     }
 
     @Override
