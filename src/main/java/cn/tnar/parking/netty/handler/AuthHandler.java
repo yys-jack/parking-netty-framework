@@ -5,7 +5,7 @@ import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.RespondProto;
 import cn.tnar.parking.model.Transmission;
 import cn.tnar.parking.netty.ChannelMaintainer;
-import cn.tnar.parking.repository.auth.AuthRepository;
+import cn.tnar.parking.repository.auth.ReactiveAuthRepository;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -22,9 +22,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class AuthHandler extends SimpleChannelInboundHandler<Transmission> {
 
-    private final AuthRepository authRepository;
+    private final ReactiveAuthRepository authRepository;
 
-    public AuthHandler(AuthRepository authRepository) {
+    public AuthHandler(ReactiveAuthRepository authRepository) {
         this.authRepository = authRepository;
     }
 
@@ -41,7 +41,7 @@ public class AuthHandler extends SimpleChannelInboundHandler<Transmission> {
             Authenticate authenticate = Authenticate.parseFrom(msg.getMessage());
             log.info("authenticate : {}", authenticate);
 
-            boolean isValid = authRepository.validate(authenticate.getSerial(), authenticate.getSecret());
+            boolean isValid = authRepository.validate(authenticate.getSerial(), authenticate.getSecret()).block();
 
             if (!isValid) {
                 log.error("认证失败：serial={}", authenticate.getSerial());
@@ -49,13 +49,13 @@ public class AuthHandler extends SimpleChannelInboundHandler<Transmission> {
                 return;
             }
 
-            java.util.Optional<cn.tnar.parking.repository.auth.AuthInfo> authInfoOpt = authRepository.findBySerial(authenticate.getSerial());
-            if (!authInfoOpt.isPresent()) {
+            cn.tnar.parking.repository.auth.AuthInfo authInfo = authRepository.findBySerial(authenticate.getSerial()).block();
+            if (authInfo == null) {
                 log.error("认证失败：serial={}", authenticate.getSerial());
                 channel.close();
                 return;
             }
-            String parkCode = authInfoOpt.get().getParkCode();
+            String parkCode = authInfo.getParkCode();
 
             ChannelMaintainer.add(parkCode, channel);
             channel.attr(ChannelMaintainer.PARK_CODE_ATTR).setIfAbsent(parkCode);

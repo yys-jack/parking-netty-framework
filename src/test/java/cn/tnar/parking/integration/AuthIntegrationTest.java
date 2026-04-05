@@ -7,8 +7,8 @@ import cn.tnar.parking.model.RespondProto;
 import cn.tnar.parking.model.Transmission;
 import cn.tnar.parking.netty.handler.AuthHandler;
 import cn.tnar.parking.netty.handler.DispatcherHandler;
-import cn.tnar.parking.repository.auth.AuthRepository;
 import cn.tnar.parking.repository.auth.InMemoryAuthRepository;
+import cn.tnar.parking.repository.auth.ReactiveAuthRepository;
 import cn.tnar.parking.task.HandlerRegistry;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.timeout.IdleStateHandler;
@@ -32,7 +32,7 @@ class AuthIntegrationTest {
     @Mock
     private HandlerRegistry handlerRegistry;
 
-    private AuthRepository authRepository;
+    private ReactiveAuthRepository authRepository;
     private AuthHandler authHandler;
     private DispatcherHandler dispatcherHandler;
 
@@ -54,38 +54,38 @@ class AuthIntegrationTest {
     @Test
     void testValidate_Success() {
         // When & Then
-        assertTrue(authRepository.validate("TEST-001", "test-secret"));
+        assertTrue(authRepository.validate("TEST-001", "test-secret").block());
     }
 
     @Test
     void testValidate_Failure_WrongSecret() {
         // When & Then
-        assertFalse(authRepository.validate("TEST-001", "wrong-secret"));
+        assertFalse(authRepository.validate("TEST-001", "wrong-secret").block());
     }
 
     @Test
     void testValidate_Failure_UnknownSerial() {
         // When & Then
-        assertFalse(authRepository.validate("UNKNOWN-001", "test-secret"));
+        assertFalse(authRepository.validate("UNKNOWN-001", "test-secret").block());
     }
 
     @Test
     void testFindBySerial_Success() {
         // When
-        java.util.Optional<cn.tnar.parking.repository.auth.AuthInfo> authInfo = authRepository.findBySerial("TEST-001");
+        cn.tnar.parking.repository.auth.AuthInfo authInfo = authRepository.findBySerial("TEST-001").block();
 
         // Then
-        assertTrue(authInfo.isPresent());
-        assertEquals("PARK001", authInfo.get().getParkCode());
-        assertEquals("test-secret", authInfo.get().getSecret());
+        assertNotNull(authInfo);
+        assertEquals("PARK001", authInfo.getParkCode());
+        assertEquals("test-secret", authInfo.getSecret());
     }
 
     @Test
     void testFindBySerial_Failure() {
         // When
-        java.util.Optional<cn.tnar.parking.repository.auth.AuthInfo> authInfo = authRepository.findBySerial("UNKNOWN-001");
+        cn.tnar.parking.repository.auth.AuthInfo authInfo = authRepository.findBySerial("UNKNOWN-001").block();
 
         // Then
-        assertFalse(authInfo.isPresent());
+        assertNull(authInfo);
     }
 }
