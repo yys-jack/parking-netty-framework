@@ -37,8 +37,11 @@ public class JdbcSpaceRepository implements SpaceRepository {
 
     @Override
     public void saveSpaceSnapshot(String parkCode, int total, int remained, long spaceTime) {
-        BigDecimal occupancyRate = BigDecimal.valueOf((total - remained) * 100.0 / total)
-            .setScale(2, RoundingMode.HALF_UP);
+        validateSaveParams(parkCode, total, remained);
+
+        BigDecimal occupancyRate = BigDecimal.valueOf(total - remained)
+            .multiply(BigDecimal.valueOf(100))
+            .divide(BigDecimal.valueOf(total), 2, RoundingMode.HALF_UP);
 
         jdbcTemplate.update(INSERT_SQL,
             parkCode,
@@ -49,6 +52,24 @@ public class JdbcSpaceRepository implements SpaceRepository {
 
         log.debug("保存车位快照，parkCode: {}, 总车位：{}, 剩余：{}, 占用率：{}%",
             parkCode, total, remained, occupancyRate);
+    }
+
+    /**
+     * 验证保存参数
+     */
+    private void validateSaveParams(String parkCode, int total, int remained) {
+        if (parkCode == null || parkCode.isBlank()) {
+            throw new IllegalArgumentException("停车场编码不能为空");
+        }
+        if (total <= 0) {
+            throw new IllegalArgumentException("总车位数必须大于 0");
+        }
+        if (remained < 0) {
+            throw new IllegalArgumentException("剩余车位数不能小于 0");
+        }
+        if (remained > total) {
+            throw new IllegalArgumentException("剩余车位数不能大于总车位数");
+        }
     }
 
     @Override

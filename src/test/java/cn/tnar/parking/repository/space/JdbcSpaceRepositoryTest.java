@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * JdbcSpaceRepository 集成测试
@@ -139,5 +140,112 @@ class JdbcSpaceRepositoryTest {
 
         // Then
         assertTrue(results.isEmpty());
+    }
+
+    @Test
+    void saveSpaceSnapshot_zeroOccupancyRate() {
+        // Given - 剩余车位等于总车位，占用率为 0%
+        String parkCode = "PARK_ZERO";
+        int total = 100;
+        int remained = 100;
+        long spaceTime = System.currentTimeMillis();
+
+        // When
+        spaceRepository.saveSpaceSnapshot(parkCode, total, remained, spaceTime);
+
+        // Then
+        Optional<SpaceSnapshot> saved = spaceRepository.findLatestByParkCode(parkCode);
+        assertTrue(saved.isPresent());
+        assertEquals(new BigDecimal("0.00"), saved.get().getOccupancyRate());
+    }
+
+    @Test
+    void saveSpaceSnapshot_fullOccupancyRate() {
+        // Given - 剩余车位为 0，占用率为 100%
+        String parkCode = "PARK_FULL";
+        int total = 100;
+        int remained = 0;
+        long spaceTime = System.currentTimeMillis();
+
+        // When
+        spaceRepository.saveSpaceSnapshot(parkCode, total, remained, spaceTime);
+
+        // Then
+        Optional<SpaceSnapshot> saved = spaceRepository.findLatestByParkCode(parkCode);
+        assertTrue(saved.isPresent());
+        assertEquals(new BigDecimal("100.00"), saved.get().getOccupancyRate());
+    }
+
+    @Test
+    void saveSpaceSnapshot_fractionalOccupancyRate() {
+        // Given - 33.33% 占用率
+        String parkCode = "PARK_FRACTIONAL";
+        int total = 300;
+        int remained = 200;
+        long spaceTime = System.currentTimeMillis();
+
+        // When
+        spaceRepository.saveSpaceSnapshot(parkCode, total, remained, spaceTime);
+
+        // Then
+        Optional<SpaceSnapshot> saved = spaceRepository.findLatestByParkCode(parkCode);
+        assertTrue(saved.isPresent());
+        assertEquals(new BigDecimal("33.33"), saved.get().getOccupancyRate());
+    }
+
+    @Test
+    void saveSpaceSnapshot_throwsWhenParkCodeEmpty() {
+        // Given
+        String parkCode = "";
+        int total = 100;
+        int remained = 50;
+        long spaceTime = System.currentTimeMillis();
+
+        // When & Then
+        assertThrows(IllegalArgumentException.class, () -> {
+            spaceRepository.saveSpaceSnapshot(parkCode, total, remained, spaceTime);
+        });
+    }
+
+    @Test
+    void saveSpaceSnapshot_throwsWhenTotalZero() {
+        // Given
+        String parkCode = "PARK001";
+        int total = 0;
+        int remained = 0;
+        long spaceTime = System.currentTimeMillis();
+
+        // When & Then
+        assertThrows(IllegalArgumentException.class, () -> {
+            spaceRepository.saveSpaceSnapshot(parkCode, total, remained, spaceTime);
+        });
+    }
+
+    @Test
+    void saveSpaceSnapshot_throwsWhenRemainedNegative() {
+        // Given
+        String parkCode = "PARK001";
+        int total = 100;
+        int remained = -1;
+        long spaceTime = System.currentTimeMillis();
+
+        // When & Then
+        assertThrows(IllegalArgumentException.class, () -> {
+            spaceRepository.saveSpaceSnapshot(parkCode, total, remained, spaceTime);
+        });
+    }
+
+    @Test
+    void saveSpaceSnapshot_throwsWhenRemainedExceedsTotal() {
+        // Given
+        String parkCode = "PARK001";
+        int total = 100;
+        int remained = 150;
+        long spaceTime = System.currentTimeMillis();
+
+        // When & Then
+        assertThrows(IllegalArgumentException.class, () -> {
+            spaceRepository.saveSpaceSnapshot(parkCode, total, remained, spaceTime);
+        });
     }
 }
