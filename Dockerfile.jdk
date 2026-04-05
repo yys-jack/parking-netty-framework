@@ -1,5 +1,6 @@
-# Dragonwell 21 JDK 基础镜像
-# 用于其他项目的自定义 JRE 构建
+# Dragonwell 21 JRE 基础镜像
+# 构建命令：docker build -f Dockerfile.jdk -t dragonwell:21 .
+# 使用方式：FROM dragonwell:21
 
 FROM debian:bookworm-slim AS jdk-builder
 
