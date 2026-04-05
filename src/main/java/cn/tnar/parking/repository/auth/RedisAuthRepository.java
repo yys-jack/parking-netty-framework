@@ -7,7 +7,6 @@ import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 import jakarta.annotation.PostConstruct;
 import java.util.Arrays;
@@ -89,7 +88,6 @@ public class RedisAuthRepository implements ReactiveAuthRepository {
                             new AuthInfo(rs.getString("serial"), rs.getString("park_code"), rs.getString("secret"))
                     );
                 })
-                .subscribeOn(Schedulers.boundedElastic())
                 .flatMap(authInfos -> {
                     Mono<Void> saveOperations = Mono.empty();
                     for (AuthInfo info : authInfos) {
