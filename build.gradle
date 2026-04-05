@@ -63,6 +63,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'com.mysql:mysql-connector-j'
 
+    // H2 for embedded database (default in-memory mode)
+    runtimeOnly 'com.h2database:h2'
+
     // Testcontainers for integration tests
     testImplementation 'org.testcontainers:testcontainers:1.19.3'
     testImplementation 'org.testcontainers:mysql:1.19.3'
