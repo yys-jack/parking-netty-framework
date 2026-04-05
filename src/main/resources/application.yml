@@ -20,6 +20,18 @@ logging:
     cn.tnar.parking: DEBUG
     io.netty: INFO
 
+scheduler:
+  database:
+    core-threads: 10
+    max-threads: 20
+    queue-capacity: 1000
+    timeout-seconds: 10
+  external:
+    core-threads: 5
+    max-threads: 10
+    queue-capacity: 500
+    timeout-seconds: 3
+
 management:
   endpoints:
     web:
