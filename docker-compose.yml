@@ -32,6 +32,12 @@ services:
     networks:
       - netty-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --server-response --timeout=5 http://localhost:8081/actuator/health 2>&1 | grep -q 'HTTP' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   netty-server-2:
     build:
@@ -50,6 +56,12 @@ services:
     networks:
       - netty-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --server-response --timeout=5 http://localhost:8081/actuator/health 2>&1 | grep -q 'HTTP' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 networks:
   netty-network:
