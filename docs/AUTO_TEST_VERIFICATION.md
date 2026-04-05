@@ -1,8 +1,8 @@
 # 自动测试体系验证报告
 
-**日期**: 2026-04-04  
+**日期**: 2026-04-05  
 **验证人**: Claude Code  
-**提交**: 2471f48 `chore: verify complete test workflow`
+**提交**: d4dd057 `feat: add database profile configuration for H2 and MySQL`
 
 ---
 
@@ -26,8 +26,8 @@
 
 ### 2.1 快速测试 (./gradlew test)
 
-**执行时间**: 1.435 秒  
-**测试结果**: 28 个测试，100% 通过率
+**执行时间**: 约 60 秒（包含 Testcontainers 集成测试）  
+**测试结果**: 56 个测试，100% 通过率
 
 | 模块 | 测试数 | 失败 | 跳过 | 成功率 |
 |------|--------|------|------|--------|
@@ -40,6 +40,16 @@
 | DemoHandlerTest | 2 | 0 | 0 | 100% |
 | SpaceHandlerTest | 2 | 0 | 0 | 100% |
 | HandlerRegistryTest | 2 | 0 | 0 | 100% |
+| InMemoryAuthRepositoryTest | 6 | 0 | 0 | 100% |
+| RedisAuthRepositoryTest | 6 | 0 | 0 | 100% |
+| JdbcAuthRepositoryTest | 6 | 0 | 0 | 100% |
+| AuthRefreshControllerTest | 3 | 0 | 0 | 100% |
+| RedisConnectionConfigInMemoryTest | 3 | 0 | 0 | 100% |
+| RedisConnectionConfigRedisTest | 5 | 0 | 0 | 100% |
+| MetricsConfigTest | 1 | 0 | 0 | 100% |
+| MetricsAspectTest | 4 | 0 | 0 | 100% |
+| ApiServerMetricsTest | 2 | 0 | 0 | 100% |
+| PrometheusMetricsIntegrationTest | 6 | 0 | 0 | 100% |
 
 **报告位置**: `build/reports/tests/test/index.html`
 

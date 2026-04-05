@@ -85,7 +85,9 @@ parking-netty-framework/
 ├── src/main/proto/
 │   └── message.proto                  # Protobuf 定义
 ├── src/main/resources/
-│   ├── application.yml                # 应用配置
+│   ├── application.yml                # 应用配置（默认 H2 数据库）
+│   ├── application-h2.yml             # H2 数据库配置（默认）
+│   ├── application-mysql.yml          # MySQL 数据库配置
 │   ├── auth.yml                       # 认证配置
 │   ├── schema.sql                     # H2 数据库 schema
 │   └── schema-mysql.sql               # MySQL 数据库 schema
@@ -128,8 +130,30 @@ parking-netty-framework/
 - JDK 21 (Alibaba Dragonwell 21.0.10)
 - Gradle 8.5
 - Docker 20+ (可选，用于容器化部署)
+- H2 Database (默认，嵌入式无需安装)
+- MySQL 8.0+ (可选，生产环境使用)
+- Redis 6.0+ (可选，生产环境推荐)
 
-### 2. 启动服务器
+### 2. 数据库配置
+
+项目支持 H2（默认）和 MySQL 两种数据库，通过 profile 切换：
+
+```bash
+# 使用 H2（默认，无需额外配置）
+./gradlew bootRun
+
+# 使用 MySQL
+./gradlew bootRun --args='--spring.profiles.active=mysql'
+```
+
+或在 `application.yml` 中修改默认配置：
+```yaml
+spring:
+  profiles:
+    active: mysql  # 改为 mysql 使用 MySQL，h2 使用 H2
+```
+
+### 3. 启动服务器
 
 ```bash
 # 方式一：使用 Gradle
@@ -143,7 +167,7 @@ parking-netty-framework/
 - HTTP 端口：8080 (Spring Boot Actuator)
 - TCP 端口：8889 (Netty)
 
-### 3. 运行测试
+### 4. 运行测试
 
 ```bash
 # 快速测试（开发中随时运行）
@@ -156,7 +180,7 @@ parking-netty-framework/
 open build/reports/tests/test/index.html
 ```
 
-### 4. 运行测试客户端
+### 5. 运行测试客户端
 
 ```bash
 # 使用 Gradle
@@ -167,7 +191,7 @@ open build/reports/tests/test/index.html
     -PclientSecret=test-secret
 ```
 
-### 5. Docker 部署
+### 6. Docker 部署
 
 ```bash
 # 构建并启动
@@ -273,6 +297,25 @@ public class MyHandler implements Handler {
 
 ## 配置说明
 
+### 数据库配置（Profile 切换）
+
+项目支持 H2（默认）和 MySQL 两种数据库，通过 profile 切换：
+
+```yaml
+# application.yml
+spring:
+  profiles:
+    active: h2  # 可选值：h2 | mysql
+```
+
+**切换方式**:
+- 修改 `application.yml` 中的 `spring.profiles.active`
+- 或命令行启动：`--spring.profiles.active=mysql`
+
+**Profile 配置文件**:
+- `application-h2.yml` - H2 嵌入式数据库（默认）
+- `application-mysql.yml` - MySQL 数据库（生产环境）
+
 ### application.yml
 
 ```yaml
@@ -337,6 +380,13 @@ auth:
 - `in-memory`: 内存存储，开发/测试环境使用
 - `redis`: Redis 响应式存储，生产环境推荐
 - `jdbc`: MySQL 数据库存储，备用方案
+
+**Redis 条件化加载**:
+
+Redis 配置使用 `@ConditionalOnProperty` 按需加载：
+- 当 `auth.storage.type=redis` 时，加载 `RedisAutoConfiguration` 和 `RedisRepositoriesAutoConfiguration`
+- 当 `auth.storage.type=in-memory` 或 `jdbc` 时，不加载 Redis 相关配置类
+- 测试覆盖：`RedisConnectionConfigInMemoryTest` (3 个测试) 和 `RedisConnectionConfigRedisTest` (5 个测试)
 
 **服务启动自动加载** (redis 模式):
 服务启动时自动从数据库加载认证数据到 Redis 缓存

@@ -10,15 +10,52 @@
 | 组件 | 版本 | 说明 |
 |------|------|------|
 | JDK | 21+ | Alibaba Dragonwell 21.0.10 推荐 |
-| MySQL | 8.0+ | 认证数据存储 |
+| H2 | 2.x | 嵌入式数据库（开发/测试默认） |
+| MySQL | 8.0+ | 生产环境数据库 |
 | Redis | 6.0+ | 响应式缓存 (推荐) |
-| Docker | 20+ | 可选，容器化部署 |
 
 ---
 
 ## 2. 数据库配置
 
-### 2.1 创建数据库
+### 2.1 Profile 切换
+
+项目支持 H2（默认）和 MySQL 两种数据库，通过 profile 切换：
+
+```yaml
+# application.yml
+spring:
+  profiles:
+    active: h2  # 可选值：h2 | mysql
+```
+
+**切换方式**:
+- 修改 `application.yml` 中的 `spring.profiles.active`
+- 或命令行启动：`--spring.profiles.active=mysql`
+- 或环境变量：`SPRING_PROFILES_ACTIVE=mysql`
+
+**配置文件**:
+- `application-h2.yml` - H2 嵌入式数据库（默认）
+- `application-mysql.yml` - MySQL 数据库（生产环境）
+
+### 2.2 H2 数据库（默认）
+
+H2 作为默认数据库，无需额外配置，适用于：
+- 开发环境
+- 测试环境
+- 演示环境
+
+**访问 H2 Console**（如果启用）:
+```
+URL: http://localhost:8080/h2-console
+JDBC URL: jdbc:h2:mem:parking
+Username: sa
+Password: (空)
+```
+
+### 2.3 MySQL 数据库（生产环境）
+
+**创建数据库**:
 
 ```sql
 CREATE DATABASE IF NOT EXISTS parking 
@@ -30,7 +67,7 @@ GRANT ALL PRIVILEGES ON parking.* TO 'parking'@'%';
 FLUSH PRIVILEGES;
 ```
 
-### 2.2 执行 Schema
+### 2.4 执行 Schema
 
 ```bash
 # 连接到数据库
@@ -46,7 +83,7 @@ source /path/to/schema-mysql.sql
 mysql -u parking -p parking < src/main/resources/schema-mysql.sql
 ```
 
-### 2.3 验证表结构
+### 2.5 验证表结构
 
 ```sql
 SHOW TABLES;

@@ -1,6 +1,6 @@
 # 开发指南
 
-**日期**: 2026-04-04  
+**日期**: 2026-04-05  
 **状态**: 已启用
 
 ---
@@ -56,7 +56,30 @@ ls -la .git/hooks/pre-commit
 
 ---
 
-## 2. 项目结构
+## 3. 核心组件
+
+---
+
+## 2.1 数据库配置
+
+项目支持 H2（默认）和 MySQL 两种数据库，通过 profile 切换：
+
+```yaml
+# application.yml
+spring:
+  profiles:
+    active: h2  # 可选值：h2 | mysql
+```
+
+**切换方式**:
+- 修改 `application.yml` 中的 `spring.profiles.active`
+- 或命令行启动：`--spring.profiles.active=mysql`
+
+**配置文件**:
+- `application-h2.yml` - H2 嵌入式数据库（默认）
+- `application-mysql.yml` - MySQL 数据库（生产环境）
+
+## 2.2 项目结构
 
 ```
 parking-netty-framework/
@@ -71,7 +94,9 @@ parking-netty-framework/
 ├── src/main/proto/
 │   └── message.proto                  # Protobuf 定义
 ├── src/main/resources/
-│   ├── application.yml                # 应用配置
+│   ├── application.yml                # 应用配置（默认 H2 profile）
+│   ├── application-h2.yml             # H2 数据库配置
+│   ├── application-mysql.yml          # MySQL 数据库配置
 │   └── auth.yml                       # 认证配置
 ├── src/test/java/                     # 测试代码
 ├── scripts/                           # 工具脚本
@@ -80,7 +105,7 @@ parking-netty-framework/
 
 ---
 
-## 3. 核心组件
+## 4. 核心组件
 
 ### 3.1 Netty 服务器 (ApiServer)
 
@@ -200,9 +225,9 @@ public static class Jdbc {
 
 ---
 
-## 4. 开发流程
+## 5. 开发流程
 
-### 4.1 添加新 Handler
+### 5.1 添加新 Handler
 
 **步骤 1**: 创建 Handler 类
 
@@ -269,7 +294,7 @@ class PaymentHandlerTest {
 
 ---
 
-### 4.2 添加新消息类型
+### 5.2 添加新消息类型
 
 **步骤 1**: 修改 proto 文件
 
@@ -313,7 +338,7 @@ ls build/generated/source/proto/main/java/cn/tnar/parking/model/
 
 ---
 
-### 4.3 实现响应式认证存储
+### 5.3 实现响应式认证存储
 
 **场景**: 添加 Redis 响应式认证存储
 
@@ -377,7 +402,7 @@ auth:
 - 使用 `flatMap()` 进行链式调用
 - 使用 `defaultIfEmpty()` 提供默认值
 
-### 4.4 响应式编程指南
+### 5.4 响应式编程指南
 
 本项目使用 Project Reactor 实现响应式编程。
 
@@ -449,7 +474,7 @@ void findBySerial_whenNotExists_returnsEmpty() {
 }
 ```
 
-### 4.6 监控指标开发指南
+### 5.6 监控指标开发指南
 
 本项目使用 Micrometer + Prometheus + Grafana 构建监控体系。
 
@@ -513,9 +538,9 @@ meterRegistry.timer("custom_duration_seconds", "tag_key", "tag_value")
 meterRegistry.gauge("custom_gauge", object, obj -> obj.getValue());
 ```
 
-## 5. 测试
+## 6. 测试
 
-### 5.1 单元测试
+### 6.1 单元测试
 
 ```java
 @ExtendWith(MockitoExtension.class)
@@ -569,7 +594,7 @@ class AuthIntegrationTest {
 }
 ```
 
-### 5.3 测试客户端
+### 6.3 测试客户端
 
 ```bash
 # 运行测试客户端
@@ -582,9 +607,9 @@ class AuthIntegrationTest {
 
 ---
 
-## 6. 代码规范
+## 7. 代码规范
 
-### 6.1 命名规范
+### 7.1 命名规范
 
 | 类型 | 规范 | 示例 |
 |------|------|------|
@@ -594,7 +619,7 @@ class AuthIntegrationTest {
 | 常量名 | 全大写 + 下划线 | `CODE_SUCCESS`, `MAX_RETRY` |
 | 包名 | 全小写 | `cn.tnar.parking.netty.handler` |
 
-### 6.2 代码风格
+### 7.2 代码风格
 
 **行长度**: ≤ 120 字符
 
@@ -609,7 +634,7 @@ class AuthIntegrationTest {
 ./gradlew checkstyleMain
 ```
 
-### 6.3 日志规范
+### 7.3 日志规范
 
 ```java
 // 使用 SLF4J
@@ -625,9 +650,9 @@ log.error("错误信息", e); // 异常错误
 
 ---
 
-## 7. 故障排查
+## 8. 故障排查
 
-### 7.1 启动失败
+### 8.1 启动失败
 
 **问题**: `Address already in use`
 
@@ -646,7 +671,7 @@ netty:
     port: 8890  # 换个端口
 ```
 
-### 7.2 连接失败
+### 8.2 连接失败
 
 **问题**: `Connection refused`
 
@@ -655,7 +680,7 @@ netty:
 2. 检查防火墙：`telnet localhost 8889`
 3. 查看服务端日志：`docker logs netty-server-1`
 
-### 7.3 认证失败
+### 8.3 认证失败
 
 **问题**: `CODE_MISMATCH` 或 `CODE_FAILURE`
 
@@ -673,7 +698,7 @@ auth:
       secret: test-secret  # 确保客户端使用相同的 secret
 ```
 
-### 7.4 消息未处理
+### 8.4 消息未处理
 
 **问题**: 客户端发送消息后无响应
 
@@ -684,9 +709,9 @@ auth:
 
 ---
 
-## 8. 常用命令
+## 9. 常用命令
 
-### 8.1 构建和运行
+### 9.1 构建和运行
 
 ```bash
 # 编译 Proto
@@ -718,7 +743,7 @@ auth:
 open build/reports/tests/test/index.html
 ```
 
-### 8.3 代码质量
+### 9.3 代码质量
 
 ```bash
 # Checkstyle 检查
@@ -732,7 +757,7 @@ open build/reports/checkstyle/main.html
 open build/reports/jacoco/test/html/index.html
 ```
 
-### 8.4 Docker
+### 9.4 Docker
 
 ```bash
 # 构建镜像
@@ -753,9 +778,9 @@ docker compose logs -f
 
 ---
 
-## 9. 性能优化
+## 10. 性能优化
 
-### 9.1 Netty 配置
+### 10.1 Netty 配置
 
 ```yaml
 netty:
@@ -765,13 +790,13 @@ netty:
     heartbeat-interval: 90  # 心跳间隔
 ```
 
-### 9.2 JVM 参数
+### 10.2 JVM 参数
 
 ```bash
 java -Xms512m -Xmx2g -XX:+UseG1GC -jar app.jar
 ```
 
-### 9.3 连接管理
+### 10.3 连接管理
 
 - 启用心跳检测，及时清理空闲连接
 - 设置合理的认证超时时间
@@ -779,7 +804,7 @@ java -Xms512m -Xmx2g -XX:+UseG1GC -jar app.jar
 
 ---
 
-## 10. 最佳实践
+## 11. 最佳实践
 
 1. **使用 AbstractHandler** - 统一的日志和异常处理
 2. **异常处理** - 使用 BusinessException 处理业务异常

@@ -245,7 +245,58 @@ git commit --no-verify -m "emergency fix"
 |--------|--------|------|
 | `AuthIntegrationTest` | 5 | 认证集成测试 |
 
-### 4.6 监控指标测试
+### 4.6 配置条件测试
+
+| 测试类 | 测试数 | 说明 |
+|--------|--------|------|
+| `RedisConnectionConfigInMemoryTest` | 3 | 验证 type=in-memory 时 Redis 配置不加载 |
+| `RedisConnectionConfigRedisTest` | 5 | 验证 type=redis 时 Redis 配置正确加载 |
+
+**测试场景** - Redis 条件化配置测试：
+
+```java
+// 验证 type=in-memory 时 Redis 不被加载
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+@TestPropertySource(properties = {
+    "auth.storage.type=in-memory"
+})
+class RedisConnectionConfigInMemoryTest {
+    @Test
+    void whenTypeIsInMemory_thenRedisConnectionConfigNotLoaded() {
+        assertThat(context.containsBean("redisConnectionConfig")).isFalse();
+    }
+
+    @Test
+    void whenTypeIsInMemory_thenRedisTemplateNotCreated() {
+        String[] beanNames = context.getBeanNamesForType(RedisTemplate.class);
+        assertThat(beanNames).isEmpty();
+    }
+}
+```
+
+**测试场景** - Redis 配置加载测试：
+
+```java
+// 验证 type=redis 时 Redis 配置被正确加载
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+@TestPropertySource(properties = {
+    "auth.storage.type=redis"
+})
+class RedisConnectionConfigRedisTest {
+    @Test
+    void whenTypeIsRedis_thenRedisConnectionConfigLoaded() {
+        assertThat(context.containsBean("redisConnectionConfig")).isTrue();
+    }
+
+    @Test
+    void whenTypeIsRedis_thenRedisTemplateCreated() {
+        String[] beanNames = context.getBeanNamesForType(RedisTemplate.class);
+        assertThat(beanNames).isNotEmpty();
+    }
+}
+```
+
+### 4.7 监控指标测试
 
 | 测试类 | 测试数 | 说明 |
 |--------|--------|------|
@@ -254,7 +305,7 @@ git commit --no-verify -m "emergency fix"
 | `ApiServerMetricsTest` | 2 | 连接指标测试 |
 | `PrometheusMetricsIntegrationTest` | 6 | Prometheus 集成测试 |
 
-### 4.7 Testcontainers 集成测试
+### 4.8 Testcontainers 集成测试
 
 本项目使用 Testcontainers 进行集成测试，自动启动 Redis 和 MySQL 容器。
 
@@ -325,7 +376,7 @@ class RedisAuthRepositoryTest {
 - 测试会自动拉取镜像（首次运行需要网络）
 - 测试结束后容器会自动清理
 
-**总计**: 48 个测试，100% 通过率
+**总计**: 56 个测试，100% 通过率
 
 ---
 
