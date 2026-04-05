@@ -241,9 +241,12 @@ private Scheduler cpuScheduler;
 - Repository 必须测试三种场景（成功/空/失败）
 - 新业务逻辑必须添加集成测试
 
-### 4.3 提交规范
+### 4.3 Git 提交与推送规范
 
-**Git Commit Message 格式**:
+#### Commit Message 格式
+
+遵循 Conventional Commits 规范：
+
 ```
 <type>: <subject>
 
@@ -251,34 +254,167 @@ private Scheduler cpuScheduler;
 ```
 
 **type 类型**:
-- `feat`: 新功能
-- `fix`: Bug 修复
-- `docs`: 文档更新
-- `style`: 代码风格（不影响功能）
-- `refactor`: 重构
-- `test`: 测试相关
-- `chore`: 构建/工具配置
 
-**示例**:
+| type | 说明 | 示例 |
+|------|------|------|
+| `feat` | 新功能 | `feat: add payment handler` |
+| `fix` | Bug 修复 | `fix: resolve NPE in CarInHandler` |
+| `docs` | 文档更新 | `docs: add deployment guide` |
+| `style` | 代码风格（不影响功能） | `style: format handler classes` |
+| `refactor` | 重构 | `refactor: extract auth logic` |
+| `test` | 测试相关 | `test: add RedisConnectionConfig tests` |
+| `chore` | 构建/工具配置 | `chore: update gradle wrapper` |
+
+**subject 规则**:
+- 使用祈使句（"add" 而非 "added" 或 "adds"）
+- 首字母不大写
+- 末尾无句号
+- 长度 ≤ 50 字符
+
+**完整示例**:
 ```
 feat: add payment handler for TYPE_PAYMENT
 
 - Create PaymentHandler extending AbstractHandler
 - Add payment message processing logic
 - Add unit tests with 100% coverage
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 ```
 
-**提交前检查**:
+#### 分支命名规范
+
+| 分支类型 | 命名格式 | 示例 |
+|---------|---------|------|
+| 功能分支 | `feature/<description>` | `feature/payment-handler` |
+| 修复分支 | `fix/<description>` | `fix/auth-timeout-bug` |
+| 文档分支 | `docs/<description>` | `docs/deployment-guide` |
+| 重构分支 | `refactor/<description>` | `refactor/auth-repository` |
+
+#### 提交流程
+
+**1. 提交前检查清单**:
+
 ```bash
-# 1. 运行完整测试套件
+# 1. 查看变更
+git status
+git diff
+
+# 2. 运行完整测试套件
 ./scripts/test-all.sh
 
-# 2. 检查代码风格
+# 3. 检查代码风格
 ./gradlew checkstyleMain checkstyleTest
 
-# 3. 查看覆盖率报告
+# 4. 查看测试覆盖率
 open build/reports/jacoco/test/html/index.html
+
+# 5. 查看 Checkstyle 报告
+open build/reports/checkstyle/main.html
 ```
+
+**2. 提交代码**:
+
+```bash
+# 添加变更（避免使用 -A，只添加相关文件）
+git add src/main/java/cn/tnar/parking/netty/handler/PaymentHandler.java
+git add src/test/java/cn/tnar/parking/netty/handler/PaymentHandlerTest.java
+
+# 创建提交
+git commit -m "feat: add payment handler for TYPE_PAYMENT"
+```
+
+**注意**: 不要使用 `git add -A` 或 `git add .`，可能意外提交敏感文件（`.env`, 配置文件等）。
+
+#### GitHub CLI 推送工作流
+
+**1. 认证 GitHub CLI**:
+
+```bash
+# 首次使用需要认证
+gh auth login
+# 选择 GitHub.com → SSH → 按提示完成认证
+```
+
+**2. 推送功能分支**:
+
+```bash
+# 推送到远程仓库
+git push -u origin feature/payment-handler
+```
+
+**3. 创建 Pull Request**:
+
+```bash
+# 创建 PR
+gh pr create \
+  --title "feat: add payment handler for TYPE_PAYMENT" \
+  --body "$(cat <<'EOF'
+## Summary
+- Add PaymentHandler for TYPE_PAYMENT messages
+- Implement payment processing logic
+- Add unit tests with 100% coverage
+
+## Test plan
+- [ ] ./gradlew test passed
+- [ ] ./scripts/test-all.sh passed
+- [ ] Checkstyle passed
+- [ ] Coverage report reviewed
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)"
+```
+
+**4. 查看 PR 状态**:
+
+```bash
+# 查看 PR 列表
+gh pr list
+
+# 查看当前 PR 详情
+gh pr view
+
+# 查看 CI 运行状态
+gh run list
+
+# 查看详细日志
+gh run view --log
+```
+
+**5. 合并 PR**（维护者）:
+
+```bash
+# 查看可合并的 PR
+gh pr list --state success
+
+# 合并 PR（squash merge）
+gh pr merge --squash --auto
+```
+
+#### 代码审查要求
+
+**提交前自查**:
+- [ ] 所有新增代码都有对应的测试
+- [ ] 测试覆盖率 ≥ 80%（核心模块 ≥ 90%）
+- [ ] Checkstyle 无新增警告
+- [ ] Commit Message 符合 Conventional Commits 规范
+- [ ] 分支命名符合规范
+
+**PR 审查重点**:
+- [ ] 功能是否按预期实现
+- [ ] 是否有遗漏的边界情况
+- [ ] 代码是否符合项目规范
+- [ ] 是否有性能或安全隐患
+- [ ] 是否有不必要的复杂度
+
+#### 注意事项
+
+1. **敏感文件**: 永远不要提交 `.env`, `auth.yml` 等包含敏感信息的文件
+2. **大文件**: 单个文件变更不超过 500 行（重构除外）
+3. **提交粒度**: 每个提交只做一件事，便于回滚和审查
+4. **Force Push**: 禁止在共享分支使用 `git push --force`
+5. **CI 检查**: PR 必须通过所有 CI 检查才能合并
 
 ### 4.4 数据库配置
 
