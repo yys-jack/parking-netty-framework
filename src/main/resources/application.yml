@@ -28,6 +28,7 @@ management:
 
 auth:
   storage:
+    # in-memory | redis | jdbc
     type: in-memory
     admin-token: change-me-in-production
   redis:
@@ -35,7 +36,7 @@ auth:
     port: 6379
     password: ${REDIS_PASSWORD:}
     database: 0
-    key-prefix: parking:auth:
+    key-prefix: 'parking:auth:'
   jdbc:
     url: jdbc:mysql://localhost:3306/parking?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
     username: root
