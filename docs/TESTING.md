@@ -225,13 +225,98 @@ git commit --no-verify -m "emergency fix"
 | `CarOutHandlerTest` | 2 | 车辆出场 Handler |
 | `DemoHandlerTest` | 2 | 演示 Handler |
 
-### 4.3 集成测试
+### 4.3 Repository 测试
+
+| 测试类 | 测试数 | 说明 |
+|--------|--------|------|
+| `InMemoryAuthRepositoryTest` | 6 | 内存 Repository 测试 |
+| `RedisAuthRepositoryTest` | 6 | Redis Repository 测试 (Testcontainers) |
+| `JdbcAuthRepositoryTest` | 6 | JDBC Repository 测试 (Testcontainers) |
+
+### 4.4 Web API 测试
+
+| 测试类 | 测试数 | 说明 |
+|--------|--------|------|
+| `AuthRefreshControllerTest` | 3 | REST API 测试 |
+
+### 4.5 集成测试
 
 | 测试类 | 测试数 | 说明 |
 |--------|--------|------|
 | `AuthIntegrationTest` | 5 | 认证集成测试 |
 
-**总计**: 28 个测试，100% 通过率
+### 4.6 Testcontainers 集成测试
+
+本项目使用 Testcontainers 进行集成测试，自动启动 Redis 和 MySQL 容器。
+
+**依赖配置**:
+
+```gradle
+dependencies {
+    testImplementation 'org.testcontainers:testcontainers:1.19.3'
+    testImplementation 'org.testcontainers:mysql:1.19.3'
+    testImplementation 'org.testcontainers:junit-jupiter:1.19.3'
+}
+```
+
+**测试示例** - Redis Repository 测试：
+
+```java
+@Testcontainers
+@SpringBootTest
+class RedisAuthRepositoryTest {
+
+    @Container
+    static GenericContainer<?> redis = new GenericContainer<>("redis:7")
+        .withExposedPorts(6379);
+
+    @Autowired
+    private ReactiveAuthRepository repository;
+
+    @Test
+    void findBySerial_whenExists_returnsAuthInfo() {
+        // 准备数据
+        redisTemplate.opsForHash().put("parking:auth:TEST-001", "parkCode", "PARK001");
+        redisTemplate.opsForHash().put("parking:auth:TEST-001", "secret", "test-secret");
+
+        // 执行测试
+        Mono<AuthInfo> result = repository.findBySerial("TEST-001");
+
+        // 验证结果
+        StepVerifier.create(result)
+            .assertNext(auth -> {
+                assertEquals("PARK001", auth.getParkCode());
+                assertEquals("test-secret", auth.getSecret());
+            })
+            .verifyComplete();
+    }
+
+    @Test
+    void findBySerial_whenNotExists_returnsEmpty() {
+        Mono<AuthInfo> result = repository.findBySerial("NOT-EXISTS");
+
+        StepVerifier.create(result)
+            .verifyComplete(); // 验证 Mono.empty()
+    }
+}
+```
+
+**运行 Testcontainers 测试**:
+
+```bash
+# 运行所有测试（包含 Testcontainers）
+./gradlew test
+
+# 运行特定 Testcontainers 测试
+./gradlew test --tests "RedisAuthRepositoryTest"
+```
+
+**注意事项**:
+- Docker 必须安装并运行
+- 测试会自动拉取镜像（首次运行需要网络）
+- 测试结束后容器会自动清理
+
+**总计**: 43 个测试，100% 通过率
 
 ---
 
@@ -281,6 +366,51 @@ checkstyle {
 ```bash
 ./gradlew checkstyleMain checkstyleTest
 open build/reports/checkstyle/main.html
+```
+
+### 5.4 StepVerifier 响应式测试
+
+**StepVerifier** 是测试 Reactor 响应式代码的标准工具。
+
+**测试 Mono**:
+
+```java
+@Test
+void testMonoWithValue() {
+    Mono<String> mono = Mono.just("hello");
+    
+    StepVerifier.create(mono)
+        .expectNext("hello")
+        .verifyComplete();
+}
+
+@Test
+void testMonoEmpty() {
+    Mono<String> mono = Mono.empty();
+    
+    StepVerifier.create(mono)
+        .verifyComplete(); // 空 Mono 正常完成
+}
+
+@Test
+void testMonoWithError() {
+    Mono<String> mono = Mono.error(new RuntimeException("error"));
+    
+    StepVerifier.create(mono)
+        .expectErrorMessage("error")
+        .verify();
+}
+```
+
+**测试断言**:
+
+```java
+StepVerifier.create(repository.findBySerial("TEST-001"))
+    .assertNext(authInfo -> {
+        assertEquals("TEST-001", authInfo.getSerial());
+        assertEquals("PARK001", authInfo.getParkCode());
+    })
+    .verifyComplete();
 ```
 
 ---
