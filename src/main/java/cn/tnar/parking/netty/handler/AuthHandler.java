@@ -7,6 +7,7 @@ import cn.tnar.parking.model.RespondProto;
 import cn.tnar.parking.model.Transmission;
 import com.google.protobuf.InvalidProtocolBufferException;
 import cn.tnar.parking.netty.ChannelMaintainer;
+import cn.tnar.parking.repository.auth.AuthInfo;
 import cn.tnar.parking.repository.auth.ReactiveAuthRepository;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
@@ -53,68 +54,63 @@ public class AuthHandler extends SimpleChannelInboundHandler<Transmission> {
             return;
         }
 
-        // Record auth start time
-        long authStart = System.nanoTime();
+        String secret = authenticate.getSecret();
         String serial = authenticate.getSerial();
+        long authStart = System.nanoTime();
 
-        // Reactive authentication flow
-        authRepository.validate(authenticate.getSerial(), authenticate.getSecret())
-                .subscribe(
-                        isValid -> handleValid(ctx, msg, authenticate, channel, authStart, serial),
-                        error -> handleError(ctx, channel, error, authStart, serial)
-                );
+        // 扁平化链式调用替代嵌套 subscribe
+        authRepository.validate(serial, secret)
+                .flatMap(isValid -> {
+                    if (!isValid) {
+                        return Mono.error(new RuntimeException("invalid credentials"));
+                    }
+                    return authRepository.findBySerial(serial)
+                            .switchIfEmpty(Mono.error(new RuntimeException("serial not found")));
+                })
+                .doOnNext(authInfo -> completeAuthentication(ctx, msg, authInfo, authStart, serial))
+                .onErrorResume(error -> {
+                    handleAuthError(ctx, error, authStart, serial);
+                    return Mono.empty();
+                })
+                .subscribe();
     }
 
-    private void handleValid(ChannelHandlerContext ctx, Transmission msg,
-                             Authenticate authenticate, Channel channel, long authStart, String serial) {
-        authRepository.findBySerial(authenticate.getSerial())
-                .subscribe(
-                        authInfo -> {
-                            long duration = System.nanoTime() - authStart;
-                            double durationSeconds = duration / 1_000_000_000.0;
-
-                            if (authInfo == null) {
-                                log.error("Auth failed: serial not found");
-                                metricsAspect.recordAuthFailure(serial, "serial_not_found", durationSeconds);
-                                channel.close();
-                                return;
-                            }
-
-                            String parkCode = authInfo.getParkCode();
-                            metricsAspect.recordAuthSuccess(parkCode, durationSeconds);
-                            ChannelMaintainer.add(parkCode, channel);
-                            channel.attr(ChannelMaintainer.PARK_CODE_ATTR).setIfAbsent(parkCode);
-
-                            Respond resp = RespondProto.success();
-                            Transmission ret = Transmission.newBuilder()
-                                    .setType(Transmission.MessageType.TYPE_RESPOND)
-                                    .setID(msg.getID())
-                                    .setMessage(resp.toByteString())
-                                    .build();
-
-                            channel.writeAndFlush(ret).addListener(future -> {
-                                if (future.isSuccess()) {
-                                    log.info("parkCode: {} auth success", parkCode);
-                                } else {
-                                    log.error("parkCode: {} auth success but response failed", parkCode);
-                                }
-                                removeAuthHandler(ctx.pipeline());
-                            });
-                        },
-                        error -> {
-                            long duration = System.nanoTime() - authStart;
-                            double durationSeconds = duration / 1_000_000_000.0;
-                            handleError(ctx, channel, error, authStart, serial);
-                        }
-                );
-    }
-
-    private void handleError(ChannelHandlerContext ctx, Channel channel, Throwable error, long authStart, String serial) {
+    private void completeAuthentication(ChannelHandlerContext ctx, Transmission msg,
+                                        AuthInfo authInfo, long authStart, String serial) {
         long duration = System.nanoTime() - authStart;
         double durationSeconds = duration / 1_000_000_000.0;
-        log.error("Authentication error: " + error.getMessage());
-        metricsAspect.recordAuthFailure(serial, "error: " + error.getMessage(), durationSeconds);
-        channel.close();
+
+        String parkCode = authInfo.getParkCode();
+        metricsAspect.recordAuthSuccess(parkCode, durationSeconds);
+        ChannelMaintainer.add(parkCode, ctx.channel());
+        ctx.channel().attr(ChannelMaintainer.PARK_CODE_ATTR).setIfAbsent(parkCode);
+
+        Respond resp = RespondProto.success();
+        Transmission ret = Transmission.newBuilder()
+                .setType(Transmission.MessageType.TYPE_RESPOND)
+                .setID(msg.getID())
+                .setMessage(resp.toByteString())
+                .build();
+
+        ctx.channel().writeAndFlush(ret).addListener(future -> {
+            if (future.isSuccess()) {
+                log.info("parkCode: {} auth success", parkCode);
+            } else {
+                log.error("parkCode: {} auth success but response failed", parkCode);
+            }
+            removeAuthHandler(ctx.pipeline());
+        });
+    }
+
+    private void handleAuthError(ChannelHandlerContext ctx, Throwable error,
+                                 long authStart, String serial) {
+        long duration = System.nanoTime() - authStart;
+        double durationSeconds = duration / 1_000_000_000.0;
+        String reason = error.getMessage() != null ? error.getMessage() : "unknown error";
+
+        log.error("Authentication error: {}", error.getMessage());
+        metricsAspect.recordAuthFailure(serial, "error: " + reason, durationSeconds);
+        ctx.channel().close();
     }
 
     private void removeAuthHandler(ChannelPipeline pipeline) {
