@@ -59,6 +59,9 @@ dependencies {
     // Redis (Reactive)
     implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
 
+    // Micrometer Prometheus for metrics
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+
     // MySQL
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'com.mysql:mysql-connector-j'
