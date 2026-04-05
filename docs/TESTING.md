@@ -245,7 +245,16 @@ git commit --no-verify -m "emergency fix"
 |--------|--------|------|
 | `AuthIntegrationTest` | 5 | 认证集成测试 |
 
-### 4.6 Testcontainers 集成测试
+### 4.6 监控指标测试
+
+| 测试类 | 测试数 | 说明 |
+|--------|--------|------|
+| `MetricsConfigTest` | 1 | 指标配置测试 |
+| `MetricsAspectTest` | 4 | 指标切面测试 |
+| `ApiServerMetricsTest` | 2 | 连接指标测试 |
+| `PrometheusMetricsIntegrationTest` | 6 | Prometheus 集成测试 |
+
+### 4.7 Testcontainers 集成测试
 
 本项目使用 Testcontainers 进行集成测试，自动启动 Redis 和 MySQL 容器。
 
@@ -316,7 +325,7 @@ class RedisAuthRepositoryTest {
 - 测试会自动拉取镜像（首次运行需要网络）
 - 测试结束后容器会自动清理
 
-**总计**: 43 个测试，100% 通过率
+**总计**: 48 个测试，100% 通过率
 
 ---
 
@@ -411,6 +420,35 @@ StepVerifier.create(repository.findBySerial("TEST-001"))
         assertEquals("PARK001", authInfo.getParkCode());
     })
     .verifyComplete();
+```
+
+### 5.5 Prometheus 集成测试
+
+**测试配置**:
+
+使用 `@SpringBootTest` 和测试配置文件：
+
+```java
+@Testcontainers
+@SpringBootTest
+class PrometheusMetricsIntegrationTest {
+
+    @Autowired
+    private MeterRegistry meterRegistry;
+
+    @Test
+    void testAuthSuccessMetric() {
+        meterRegistry.counter("parking_netty_auth_success_total", "park_code", "TEST").increment();
+        assertEquals(1.0, meterRegistry.counter("parking_netty_auth_success_total", "park_code", "TEST").count());
+    }
+
+    @Test
+    void testConnectionGaugeMetric() {
+        // 验证连接数指标
+        int count = ChannelMaintainer.getActiveCount();
+        assertEquals(0, count);
+    }
+}
 ```
 
 ---
