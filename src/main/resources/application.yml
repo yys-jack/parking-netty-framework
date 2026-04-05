@@ -28,7 +28,7 @@ management:
 
 auth:
   storage:
-    type: in-memory  # in-memory | redis | jdbc
+    type: in-memory
     admin-token: change-me-in-production
   redis:
     host: localhost
