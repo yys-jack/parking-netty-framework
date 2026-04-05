@@ -52,4 +52,13 @@ public class MetricsAspect {
             "message_type", messageType, "park_code", parkCode)
             .record((long) (durationSeconds * 1000), TimeUnit.MILLISECONDS);
     }
+
+    /**
+     * 记录超时事件
+     */
+    public void recordTimeout(String messageType, String parkCode) {
+        meterRegistry.counter("parking_netty_timeout_total",
+            "message_type", messageType, "park_code", parkCode).increment();
+        log.debug("Recorded timeout for messageType: {}, parkCode: {}", messageType, parkCode);
+    }
 }

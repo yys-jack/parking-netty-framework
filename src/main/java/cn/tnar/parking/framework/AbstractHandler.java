@@ -50,6 +50,9 @@ public abstract class AbstractHandler implements Handler {
                     durationSeconds,
                     false
                 );
+                if (error instanceof java.util.concurrent.TimeoutException) {
+                    metricsAspect.recordTimeout(transmission.getType().name(), parkCode);
+                }
                 log.error("[ERROR] Handler 处理超时或失败，parkCode={}, type={}",
                     parkCode, transmission.getType(), error);
             })
