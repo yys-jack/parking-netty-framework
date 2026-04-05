@@ -69,11 +69,14 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
                             if (ctx.channel().isActive()) {
                                 // 使用 channel().writeAndFlush() 而不是 ctx.writeAndFlush()，
                                 // 确保从管道头部开始传递，经过所有编码器
-                                ctx.channel().writeAndFlush(Transmission.newBuilder()
+                                Transmission response = Transmission.newBuilder()
                                     .setID(msg.getID())
                                     .setType(Transmission.MessageType.TYPE_RESPOND)
                                     .setMessage(respond.toByteString())
-                                    .build());
+                                    .build();
+                                ctx.channel().writeAndFlush(response);
+                                log.debug("[MSG_OUT] parkCode={}, type={}, id={}, code={}",
+                                    parkCode, response.getType(), response.getID(), respond.getCode());
                             }
                         });
                     },
@@ -90,6 +93,8 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
 
                         if (ctx.channel().isActive()) {
                             ctx.channel().writeAndFlush(errorResponse);
+                            log.debug("[MSG_OUT] parkCode={}, type={}, id={}, code={} (error response)",
+                                parkCode, errorResponse.getType(), errorResponse.getID(), errorRespond.getCode());
                         }
                     }
                 );

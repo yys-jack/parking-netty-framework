@@ -423,6 +423,89 @@ curl -X POST -H "X-Admin-Token: your-token" http://localhost:8080/api/auth/refre
 
 **注意**: Spring Boot 3.x 使用 Jakarta EE 9+，包名从 `javax.*` 迁移到 `jakarta.*`。
 
+## 线程池架构
+
+### 线程池配置
+
+| 线程池 | 用途 | 核心线程 | 最大线程 | 队列容量 | 拒绝策略 |
+|--------|------|----------|----------|----------|----------|
+| **databaseScheduler** | Handler 业务逻辑 + JDBC 数据库操作 | 10 | 20 | 1000 | CallerRuns |
+| **externalScheduler** | 外部 API 调用（预留） | 5 | 10 | 500 | CallerRuns |
+| **cpuScheduler** | CPU 密集型计算（预留） | CPU 核心数 | CPU 核心数×2 | - | - |
+
+### 消息处理流程
+
+```mermaid
+sequenceDiagram
+    participant Client as 客户端
+    participant Boss as Boss 线程<br/>(accept 连接)
+    participant Worker as Worker 线程<br/>(EventLoop IO)
+    participant DB as databaseScheduler<br/>(数据库线程池)
+    participant DBRepo as JdbcRepository
+    participant Micrometer as 监控指标
+
+    Note over Client,Micrometer: 阶段 1: 连接建立
+    Client->>Boss: 1. TCP Connect (端口 8889)
+    Boss->>Worker: 2. 分配 SocketChannel
+    Worker->>Worker: 3. Pipeline 初始化
+    Note over Worker: LengthFieldBasedFrameDecoder<br/>ProtobufDecoder<br/>AuthHandler<br/>IdleStateHandler(10s)<br/>IdleStateHandler(90s)
+
+    Note over Client,Micrometer: 阶段 2: 认证流程 (TYPE_AUTHENTICATE)
+    Client->>Worker: 4. 发送认证消息
+    Note over Worker: AuthHandler.channelRead0()
+    Worker->>DBRepo: 5. authRepository.validate()<br/>(JDBC 查询)
+    Note over DBRepo: 阻塞式 JDBC 操作
+    DBRepo-->>Worker: 6. 返回验证结果
+    Worker->>DBRepo: 7. authRepository.findBySerial()
+    DBRepo-->>Worker: 8. 返回 AuthInfo
+    Worker->>Worker: 9. 记录认证成功指标
+    Worker->>Worker: 10. ChannelMaintainer.add()<br/>保存 parkCode ↔ Channel 映射
+    Worker->>Client: 11. 发送认证响应
+    Worker->>Worker: 12. 移除 AuthHandler
+
+    Note over Client,Micrometer: 阶段 3: 业务消息处理 (TYPE_SPACE 等)
+    Client->>Worker: 13. 发送车位上报消息
+    Note over Worker: DispatcherHandler.channelRead0()
+    Note over Worker: 获取 parkCode<br/>从 Channel 属性
+    Worker->>Worker: 14. handler.handle()<br/>返回 Mono<Respond>
+    
+    rect rgb(230, 240, 250)
+        Note over Worker,DB: ★ 关键：切换到数据库线程池
+        Worker->>DB: 15. .subscribeOn(databaseScheduler)<br/>订阅切换到 DB 线程
+        Note over DB: Handler 业务逻辑执行<br/>Repository 数据库操作
+        DB->>DBRepo: 16. JDBC 数据库操作
+        DBRepo-->>DB: 17. 返回查询结果
+        DB->>DB: 18. .publishOn(Schedulers.immediate())<br/>切换回当前线程
+    end
+    
+    DB->>Worker: 19. subscribe 回调执行
+    Worker->>Worker: 20. ctx.executor().execute()<br/>确保在 EventLoop 执行
+    Worker->>Client: 21. ctx.channel().writeAndFlush()<br/>经过 ProtobufEncoder
+
+    Note over Client,Micrometer: 阶段 4: 监控指标
+    Micrometer->>DB: Gauge: scheduler_pool_size
+    Micrometer->>DB: Gauge: scheduler_queue_size
+    Micrometer->>DB: Gauge: scheduler_active_threads
+```
+
+### 关键线程切换点
+
+| 阶段 | 线程 | 说明 |
+|------|------|------|
+| **连接建立** | Boss → Worker | Boss 只负责 accept，IO 操作交给 Worker |
+| **认证阶段** | Worker 线程直接执行 | 认证是轻量级操作，直接在工作线程执行 JDBC |
+| **业务消息** | Worker → databaseScheduler → Worker | 通过 `subscribeOn()` 切换到 DB 线程池，处理后通过 `publishOn()` 切回 |
+| **响应发送** | Worker 线程 | 必须回到 EventLoop 线程，确保经过 Pipeline 编码器 |
+
+**为什么需要 databaseScheduler？**
+
+Netty 的 IO 线程（EventLoop）非常宝贵，如果在 IO 线程中直接执行阻塞的 JDBC 操作，会导致：
+1. IO 线程被阻塞，无法处理其他连接
+2. 系统吞吐量下降
+3. 可能引发雪崩效应
+
+`databaseScheduler` 通过 `subscribeOn()` 将数据库操作卸载到专用线程池，保持 IO 线程的轻量级。
+
 ## 消息类型
 
 | 类型 | ID | 说明 |
