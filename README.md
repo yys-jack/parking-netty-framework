@@ -285,6 +285,40 @@ auth:
       secret: prod-secret-xyz
 ```
 
+### 认证存储配置
+
+支持三种认证存储方式：
+
+```yaml
+auth:
+  storage:
+    type: in-memory  # in-memory | redis | jdbc
+    admin-token: change-me-in-production
+  redis:
+    host: localhost
+    port: 6379
+  jdbc:
+    url: jdbc:mysql://localhost:3306/parking
+    username: root
+    password: xxx
+```
+
+**刷新缓存 API** (仅 redis 模式):
+```bash
+curl -X POST -H "X-Admin-Token: your-token" http://localhost:8080/api/auth/refresh
+```
+
+**响应示例**:
+```json
+{
+  "code": 1,
+  "message": "success",
+  "data": {
+    "refreshed": 5
+  }
+}
+```
+
 生产环境可使用 Redis 或数据库实现 `AuthRepository` 接口。
 
 **Spring Boot 3.x 迁移说明**：
