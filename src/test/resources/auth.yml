@@ -1,0 +1,5 @@
+auth:
+  entries:
+    - serial: TEST-001
+      park-code: PARK001
+      secret: test-secret

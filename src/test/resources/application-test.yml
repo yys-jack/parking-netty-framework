@@ -1,0 +1,55 @@
+spring:
+  config:
+    import: auth.yml
+
+server:
+  port: 0
+
+netty:
+  tcp:
+    port: 0
+    auth-timeout: 10
+    heartbeat-interval: 90
+    backlog: 128
+
+logging:
+  level:
+    cn.tnar.parking: DEBUG
+    io.netty: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: parking-netty
+    distribution:
+      percentiles-histogram:
+        parking.netty.auth.duration: true
+        parking.netty.message.duration: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+        step: 15s
+
+auth:
+  storage:
+    type: in-memory
+    admin-token: test-token
+  redis:
+    host: localhost
+    port: 6379
+    password: ''
+    database: 0
+    key-prefix: 'parking:auth:'
+  jdbc:
+    url: jdbc:h2:mem:testdb
+    username: sa
+    password: ''
+    table: auth_info
