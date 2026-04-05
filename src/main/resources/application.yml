@@ -1,6 +1,8 @@
 spring:
   config:
     import: auth.yml
+  profiles:
+    active: h2  # 默认使用 H2，可选值：h2 | mysql
 
 server:
   port: 8080
