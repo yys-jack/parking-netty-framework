@@ -42,12 +42,18 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Transmission msg) throws Exception {
         String parkCode = ctx.channel().attr(ChannelMaintainer.PARK_CODE_ATTR).get();
-        log.debug("[MSG_IN] parkCode={}, type={}, id={}", parkCode, msg.getType(), msg.getID());
+
+        // 条件日志，避免高频下的字符串拼接开销
+        if (log.isDebugEnabled()) {
+            log.debug("[MSG_IN] parkCode={}, type={}, id={}", parkCode, msg.getType(), msg.getID());
+        }
 
         if (!Transmission.MessageType.TYPE_RESPOND.equals(msg.getType())) {
             Handler handler = handlerRegistry.getHandler(msg.getType());
-            log.debug("[DISPATCH] parkCode={}, type={}, handler={}", parkCode, msg.getType(),
-                handler != null ? handler.getClass().getSimpleName() : "null");
+            if (log.isDebugEnabled()) {
+                log.debug("[DISPATCH] parkCode={}, type={}, handler={}", parkCode, msg.getType(),
+                    handler != null ? handler.getClass().getSimpleName() : "null");
+            }
 
             Mono<Respond> responseMono;
             if (handler == null) {
@@ -57,14 +63,24 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
                 responseMono = handler.handle(msg, parkCode);
             }
 
-            log.debug("[SCHEDULER] 开始在 databaseScheduler 执行 doHandle, parkCode={}, type={}", parkCode, msg.getType());
+            if (log.isDebugEnabled()) {
+                log.debug("[SCHEDULER] 开始在 databaseScheduler 执行 doHandle, parkCode={}, type={}", parkCode, msg.getType());
+            }
             responseMono
                 .timeout(Duration.ofSeconds(TIMEOUT_SECONDS),
                     Mono.just(RespondProto.failure("处理超时")))
-                .doOnSubscribe(sub -> log.debug("[SCHEDULER] doHandle 开始执行，thread={}", Thread.currentThread().getName()))
+                .doOnSubscribe(sub -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("[SCHEDULER] doHandle 开始执行，thread={}", Thread.currentThread().getName());
+                    }
+                })
                 .subscribeOn(databaseScheduler)
                 .publishOn(Schedulers.immediate())
-                .doOnNext(r -> log.debug("[SCHEDULER] doHandle 执行完成，thread={}", Thread.currentThread().getName()))
+                .doOnNext(r -> {
+                    if (log.isDebugEnabled()) {
+                        log.debug("[SCHEDULER] doHandle 执行完成，thread={}", Thread.currentThread().getName());
+                    }
+                })
                 .subscribe(
                     respond -> {
                         // 切换回 EventLoop 线程执行写操作，确保经过编码器
@@ -78,8 +94,10 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
                                     .setMessage(respond.toByteString())
                                     .build();
                                 ctx.channel().writeAndFlush(response);
-                                log.debug("[MSG_OUT] parkCode={}, type={}, id={}, code={}",
-                                    parkCode, response.getType(), response.getID(), respond.getCode());
+                                if (log.isDebugEnabled()) {
+                                    log.debug("[MSG_OUT] parkCode={}, type={}, id={}, code={}",
+                                        parkCode, response.getType(), response.getID(), respond.getCode());
+                                }
                             }
                         });
                     },
@@ -96,8 +114,10 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
 
                         if (ctx.channel().isActive()) {
                             ctx.channel().writeAndFlush(errorResponse);
-                            log.debug("[MSG_OUT] parkCode={}, type={}, id={}, code={} (error response)",
-                                parkCode, errorResponse.getType(), errorResponse.getID(), errorRespond.getCode());
+                            if (log.isDebugEnabled()) {
+                                log.debug("[MSG_OUT] parkCode={}, type={}, id={}, code={} (error response)",
+                                    parkCode, errorResponse.getType(), errorResponse.getID(), errorRespond.getCode());
+                            }
                         }
                     }
                 );
