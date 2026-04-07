@@ -53,6 +53,8 @@ public class SpaceSnapshotAggregator {
 
     /**
      * 定时刷新到数据库（每秒执行一次）
+     *
+     * 修复 C1: 先写入数据库，成功后才从 pending 中删除，避免数据丢失
      */
     @Scheduled(fixedRate = 1000)
     public void flushToDatabase() {
@@ -60,9 +62,8 @@ public class SpaceSnapshotAggregator {
             return;
         }
 
-        // 提取所有待写入的数据并清空待写队列
+        // 提取所有待写入的数据（不立即清空，等写入成功后再删除）
         Map<String, long[]> snapshotsToFlush = new ConcurrentHashMap<>(pendingSnapshots);
-        pendingSnapshots.clear();
 
         List<Object[]> batchArgs = new ArrayList<>(snapshotsToFlush.size());
         for (Map.Entry<String, long[]> entry : snapshotsToFlush.entrySet()) {
@@ -86,6 +87,8 @@ public class SpaceSnapshotAggregator {
 
             try {
                 jdbcTemplate.batchUpdate(sql, batchArgs);
+                // 成功后才从 pending 中删除已刷写的 key
+                snapshotsToFlush.keySet().forEach(pendingSnapshots::remove);
                 flushCounters.computeIfAbsent("total", k -> new AtomicLong(0))
                         .addAndGet(batchArgs.size());
 
@@ -93,8 +96,8 @@ public class SpaceSnapshotAggregator {
                         batchArgs.size(), flushCounters.get("total").get());
             } catch (Exception e) {
                 log.error("Failed to flush space snapshots to database", e);
-                // 失败时将数据重新放回队列（可能导致重复，但保证数据不丢失）
-                pendingSnapshots.putAll(snapshotsToFlush);
+                // 失败时不清空，数据仍保留在 pendingSnapshots 中，下次重试
+                // 注意：新的快照会继续覆盖 pendingSnapshots 中的旧值，保证总是保存最新状态
             }
         }
     }

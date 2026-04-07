@@ -76,7 +76,7 @@ class RedisAuthRepositoryTest {
         AuthJdbcProperties jdbcProps = new AuthJdbcProperties();
         repository = new RedisAuthRepository(redisTemplate, jdbcTemplate, redisProps, jdbcProps);
 
-        // Initialize (load from DB to Redis)
+        // Initialize (synchronous, blocks until complete)
         repository.init();
     }
 

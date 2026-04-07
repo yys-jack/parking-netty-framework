@@ -40,7 +40,14 @@ public final class ChannelMaintainer {
     public static void add(String parkCode, Channel channel) {
         CHANNEL_GROUP.add(channel);
         CHANNEL_PARK_MAP.put(channel, parkCode);
-        log.info("add channel {}", channel.id());
+        log.info("add channel {}, parkCode={}", channel.id(), parkCode);
+
+        // 添加关闭监听，确保 channel 关闭时自动清理，避免内存泄漏（修复 C4）
+        channel.closeFuture().addListener(future -> {
+            CHANNEL_PARK_MAP.remove(channel);
+            log.debug("Auto-removed closed channel from map: {}", channel.id());
+        });
+
         if (connectionCallback != null) {
             connectionCallback.accept(parkCode);
         }
@@ -52,7 +59,7 @@ public final class ChannelMaintainer {
         if (parkCode != null && disconnectionCallback != null) {
             disconnectionCallback.accept(parkCode);
         }
-        log.info("remove channel {}", channel.id());
+        log.info("remove channel {}, parkCode={}", channel.id(), parkCode);
     }
 
     public static Channel getChannel(String parkCode) {
@@ -62,7 +69,8 @@ public final class ChannelMaintainer {
                 return entry.getKey();
             }
         }
-        throw new RuntimeException("Channel not found via parkCode");
+        // 修复 I5: 异常消息包含 parkCode 参数
+        throw new RuntimeException("Channel not found for parkCode: " + parkCode);
     }
 
     /**
