@@ -16,6 +16,8 @@ netty:
     heartbeat-interval: 90
     #  backlog 大小
     backlog: 128
+    # 入口限流：并发处理上限
+    inbound-limiter: 50
 
 logging:
   level:

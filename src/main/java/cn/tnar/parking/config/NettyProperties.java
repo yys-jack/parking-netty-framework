@@ -21,6 +21,9 @@ NettyProperties {
     @Value("${netty.tcp.backlog:128}")
     private int backlog = 128;
 
+    @Value("${netty.tcp.inboundLimiter:50}")
+    private int inboundLimiter = 50;
+
     public int getPort() {
         return port;
     }
@@ -51,5 +54,13 @@ NettyProperties {
 
     public void setBacklog(int backlog) {
         this.backlog = backlog;
+    }
+
+    public int getInboundLimiter() {
+        return inboundLimiter;
+    }
+
+    public void setInboundLimiter(int inboundLimiter) {
+        this.inboundLimiter = inboundLimiter;
     }
 }
