@@ -9,7 +9,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
@@ -50,15 +49,15 @@ public final class ChannelMaintainer {
     public static void remove(Channel channel) {
         CHANNEL_GROUP.remove(channel);
         ChannelId id = channel.id();
-        Optional.ofNullable(ACTIVE_CHANNELS_INDEX.remove(id))
-                .ifPresent(parkCode -> {
-                    if (ACTIVE_CHANNELS.get(parkCode).equals(id)) {
-                        ACTIVE_CHANNELS.remove(parkCode);
-                    }
-                    if (disconnectionCallback != null) {
-                        disconnectionCallback.accept(parkCode);
-                    }
-                });
+        // 使用原子操作移除，避免竞态条件
+        String parkCode = ACTIVE_CHANNELS_INDEX.remove(id);
+        if (parkCode != null) {
+            // 使用原子 remove(key, value) 方法，只有值匹配时才删除
+            ACTIVE_CHANNELS.remove(parkCode, id);
+            if (disconnectionCallback != null) {
+                disconnectionCallback.accept(parkCode);
+            }
+        }
         log.info("remove channel {}", id);
     }
 
@@ -75,5 +74,14 @@ public final class ChannelMaintainer {
      */
     public static int getActiveCount() {
         return ACTIVE_CHANNELS.size();
+    }
+
+    /**
+     * 清空所有连接状态（仅用于测试）
+     */
+    public static void clearAll() {
+        ACTIVE_CHANNELS.clear();
+        ACTIVE_CHANNELS_INDEX.clear();
+        CHANNEL_GROUP.close().syncUninterruptibly();
     }
 }

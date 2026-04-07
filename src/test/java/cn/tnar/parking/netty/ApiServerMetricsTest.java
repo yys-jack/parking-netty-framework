@@ -33,6 +33,8 @@ class ApiServerMetricsTest {
         MockitoAnnotations.openMocks(this);
         registry = new SimpleMeterRegistry();
         metricsAspect = new MetricsAspect(registry);
+        // 清理 ChannelMaintainer 静态状态，避免测试间相互影响
+        ChannelMaintainer.clearAll();
     }
 
     @Test

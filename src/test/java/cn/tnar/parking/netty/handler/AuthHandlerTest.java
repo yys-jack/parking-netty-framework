@@ -46,8 +46,7 @@ class AuthHandlerTest {
         String parkCode = "PARK001";
         AuthInfo authInfo = new AuthInfo(serial, parkCode, secret);
 
-        // 模拟 Repository 行为
-        when(authRepository.validate(serial, secret)).thenReturn(Mono.just(true));
+        // 模拟 Repository 行为 - 优化后只调用 findBySerial，复用结果进行验证
         when(authRepository.findBySerial(serial)).thenReturn(Mono.just(authInfo));
 
         // 构建认证消息
@@ -69,8 +68,9 @@ class AuthHandlerTest {
 
         // 验证：认证成功指标被记录
         assertEquals(1.0, registry.counter("parking_netty_auth_success_total", "park_code", parkCode).count());
-        verify(authRepository, times(1)).validate(serial, secret);
+        // 优化后只调用一次 findBySerial
         verify(authRepository, times(1)).findBySerial(serial);
+        verify(authRepository, never()).validate(anyString(), anyString());
 
         ctx.close();
     }
@@ -79,8 +79,11 @@ class AuthHandlerTest {
     void testAuthenticationFailure_InvalidCredentials() throws InterruptedException {
         String serial = "TEST-001";
         String secret = "wrong-secret";
+        String parkCode = "PARK001";
 
-        when(authRepository.validate(serial, secret)).thenReturn(Mono.just(false));
+        // 模拟返回存在的 AuthInfo，但密钥不匹配
+        AuthInfo authInfo = new AuthInfo(serial, parkCode, "correct-secret");
+        when(authRepository.findBySerial(serial)).thenReturn(Mono.just(authInfo));
 
         Authenticate authenticate = Authenticate.newBuilder()
             .setSerial(serial)
@@ -101,8 +104,9 @@ class AuthHandlerTest {
         // 验证：认证失败指标被记录
         assertEquals(1.0, registry.counter("parking_netty_auth_failure_total",
             "park_code", serial, "reason", "error: invalid credentials").count());
-        verify(authRepository, times(1)).validate(serial, secret);
-        verify(authRepository, never()).findBySerial(anyString());
+        // 优化后只调用一次 findBySerial
+        verify(authRepository, times(1)).findBySerial(serial);
+        verify(authRepository, never()).validate(anyString(), anyString());
 
         ctx.close();
     }

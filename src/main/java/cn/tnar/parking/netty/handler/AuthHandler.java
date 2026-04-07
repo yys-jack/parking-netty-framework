@@ -58,14 +58,15 @@ public class AuthHandler extends SimpleChannelInboundHandler<Transmission> {
         String serial = authenticate.getSerial();
         long authStart = System.nanoTime();
 
-        // 扁平化链式调用替代嵌套 subscribe
-        authRepository.validate(serial, secret)
-                .flatMap(isValid -> {
-                    if (!isValid) {
+        // 优化：单次查询同时完成验证和获取 authInfo，避免 N+1 查询
+        authRepository.findBySerial(serial)
+                .switchIfEmpty(Mono.error(new RuntimeException("serial not found")))
+                .flatMap(authInfo -> {
+                    // 复用查询结果进行验证，避免第二次数据库查询
+                    if (!authInfo.getSecret().equals(secret)) {
                         return Mono.error(new RuntimeException("invalid credentials"));
                     }
-                    return authRepository.findBySerial(serial)
-                            .switchIfEmpty(Mono.error(new RuntimeException("serial not found")));
+                    return Mono.just(authInfo);
                 })
                 .doOnNext(authInfo -> completeAuthentication(ctx, msg, authInfo, authStart, serial))
                 .onErrorResume(error -> {

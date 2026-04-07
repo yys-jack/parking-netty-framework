@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import jakarta.annotation.PostConstruct;
@@ -44,13 +45,17 @@ public class RedisAuthRepository implements ReactiveAuthRepository {
             new AuthInfo(rs.getString("serial"), rs.getString("park_code"), rs.getString("secret"))
         );
 
-        for (AuthInfo info : authInfos) {
-            String key = keyPrefix + info.getSerial();
-            redisTemplate.opsForHash().put(key, "parkCode", info.getParkCode()).block();
-            redisTemplate.opsForHash().put(key, "secret", info.getSecret()).block();
-        }
+        // 使用响应式批量写入，减少 Redis RTT
+        Flux.fromIterable(authInfos)
+            .flatMap(info -> {
+                String key = keyPrefix + info.getSerial();
+                return redisTemplate.opsForHash().put(key, "parkCode", info.getParkCode())
+                    .then(redisTemplate.opsForHash().put(key, "secret", info.getSecret()));
+            }, 10) // 并发度 10，避免一次性创建过多并发请求
+            .then()
+            .block(); // 启动时阻塞完成
 
-        log.info("Loaded " + authInfos.size() + " auth entries to Redis");
+        log.info("Loaded " + authInfos.size() + " auth entries to Redis with batched write");
     }
 
     @Override
@@ -88,15 +93,15 @@ public class RedisAuthRepository implements ReactiveAuthRepository {
                             new AuthInfo(rs.getString("serial"), rs.getString("park_code"), rs.getString("secret"))
                     );
                 })
-                .flatMap(authInfos -> {
-                    Mono<Void> saveOperations = Mono.empty();
-                    for (AuthInfo info : authInfos) {
-                        String key = keyPrefix + info.getSerial();
-                        saveOperations = saveOperations
-                                .then(redisTemplate.opsForHash().put(key, "parkCode", info.getParkCode()).then())
-                                .then(redisTemplate.opsForHash().put(key, "secret", info.getSecret()).then());
-                    }
-                    return saveOperations.thenReturn(authInfos.size());
-                });
+                .flatMap(authInfos ->
+                    Flux.fromIterable(authInfos)
+                        .flatMap(info -> {
+                            String key = keyPrefix + info.getSerial();
+                            return redisTemplate.opsForHash().put(key, "parkCode", info.getParkCode())
+                                .then(redisTemplate.opsForHash().put(key, "secret", info.getSecret()));
+                        }, 10)
+                        .then()
+                        .thenReturn(authInfos.size())
+                );
     }
 }
