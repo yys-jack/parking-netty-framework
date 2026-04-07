@@ -12,7 +12,6 @@ import reactor.core.publisher.Mono;
 import jakarta.annotation.PostConstruct;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 @Component
@@ -26,11 +25,6 @@ public class RedisAuthRepository implements ReactiveAuthRepository {
     private final AuthRedisProperties redisProperties;
     private final AuthJdbcProperties jdbcProperties;
     private final String keyPrefix;
-
-    /**
-     * 标记缓存是否已就绪
-     */
-    private final AtomicBoolean cacheReady = new AtomicBoolean(false);
 
     public RedisAuthRepository(
             ReactiveRedisTemplate<String, String> redisTemplate,
@@ -46,35 +40,22 @@ public class RedisAuthRepository implements ReactiveAuthRepository {
 
     @PostConstruct
     public void init() {
-        // 异步加载，不阻塞应用启动
-        Mono.fromCallable(() -> {
-                    String sql = "SELECT serial, park_code, secret FROM auth_info WHERE enabled = 1";
-                    return jdbcTemplate.query(sql, (rs, rowNum) ->
-                        new AuthInfo(rs.getString("serial"), rs.getString("park_code"), rs.getString("secret"))
-                    );
-                })
-                .flatMapMany(authInfos ->
-                    Flux.fromIterable(authInfos)
-                        .flatMap(info -> {
-                            String key = keyPrefix + info.getSerial();
-                            return redisTemplate.opsForHash().put(key, "parkCode", info.getParkCode())
-                                .then(redisTemplate.opsForHash().put(key, "secret", info.getSecret()));
-                        }, 10)
-                        .then()
-                        .doOnSuccess(v -> {
-                            cacheReady.set(true);
-                            log.info("Loaded auth entries to Redis asynchronously, cache ready");
-                        })
-                        .doOnError(error -> log.severe("Failed to load auth entries to Redis: " + error.getMessage()))
-                )
-                .subscribe();
-    }
+        String sql = "SELECT serial, park_code, secret FROM auth_info WHERE enabled = 1";
+        List<AuthInfo> authInfos = jdbcTemplate.query(sql, (rs, rowNum) ->
+            new AuthInfo(rs.getString("serial"), rs.getString("park_code"), rs.getString("secret"))
+        );
 
-    /**
-     * 检查缓存是否已就绪
-     */
-    public boolean isCacheReady() {
-        return cacheReady.get();
+        // 使用响应式批量写入，减少 Redis RTT
+        Flux.fromIterable(authInfos)
+            .flatMap(info -> {
+                String key = keyPrefix + info.getSerial();
+                return redisTemplate.opsForHash().put(key, "parkCode", info.getParkCode())
+                    .then(redisTemplate.opsForHash().put(key, "secret", info.getSecret()));
+            }, 10) // 并发度 10，避免一次性创建过多并发请求
+            .then()
+            .block(); // 启动时阻塞完成
+
+        log.info("Loaded " + authInfos.size() + " auth entries to Redis with batched write");
     }
 
     @Override
