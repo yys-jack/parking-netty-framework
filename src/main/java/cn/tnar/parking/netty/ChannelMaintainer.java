@@ -19,8 +19,11 @@ import java.util.function.Consumer;
 public final class ChannelMaintainer {
     public static final AttributeKey<String> PARK_CODE_ATTR = AttributeKey.valueOf("parkCode");
     private static final DefaultChannelGroup CHANNEL_GROUP = new DefaultChannelGroup("connection-maintainer", new DefaultEventExecutor());
-    private static final Map<String, ChannelId> ACTIVE_CHANNELS = new ConcurrentHashMap<>(128);
-    private static final Map<ChannelId, String> ACTIVE_CHANNELS_INDEX = new ConcurrentHashMap<>(128);
+
+    /**
+     * 使用 Channel 对象本身作为 key（避免 EmbeddedChannelId 重复问题）
+     */
+    private static final Map<Channel, String> CHANNEL_PARK_MAP = new ConcurrentHashMap<>(128);
 
     // 指标回调
     private static Consumer<String> connectionCallback;
@@ -34,13 +37,17 @@ public final class ChannelMaintainer {
         disconnectionCallback = callback;
     }
 
-
     public static void add(String parkCode, Channel channel) {
         CHANNEL_GROUP.add(channel);
-        ChannelId id = channel.id();
-        ACTIVE_CHANNELS.put(parkCode, id);
-        ACTIVE_CHANNELS_INDEX.put(id, parkCode);
-        log.info("add channel {}", id);
+        CHANNEL_PARK_MAP.put(channel, parkCode);
+        log.info("add channel {}, parkCode={}", channel.id(), parkCode);
+
+        // 添加关闭监听，确保 channel 关闭时自动清理，避免内存泄漏（修复 C4）
+        channel.closeFuture().addListener(future -> {
+            CHANNEL_PARK_MAP.remove(channel);
+            log.debug("Auto-removed closed channel from map: {}", channel.id());
+        });
+
         if (connectionCallback != null) {
             connectionCallback.accept(parkCode);
         }
@@ -48,40 +55,36 @@ public final class ChannelMaintainer {
 
     public static void remove(Channel channel) {
         CHANNEL_GROUP.remove(channel);
-        ChannelId id = channel.id();
-        // 使用原子操作移除，避免竞态条件
-        String parkCode = ACTIVE_CHANNELS_INDEX.remove(id);
-        if (parkCode != null) {
-            // 使用原子 remove(key, value) 方法，只有值匹配时才删除
-            ACTIVE_CHANNELS.remove(parkCode, id);
-            if (disconnectionCallback != null) {
-                disconnectionCallback.accept(parkCode);
-            }
+        String parkCode = CHANNEL_PARK_MAP.remove(channel);
+        if (parkCode != null && disconnectionCallback != null) {
+            disconnectionCallback.accept(parkCode);
         }
-        log.info("remove channel {}", id);
+        log.info("remove channel {}, parkCode={}", channel.id(), parkCode);
     }
 
     public static Channel getChannel(String parkCode) {
-        ChannelId channelId = ACTIVE_CHANNELS.get(parkCode);
-        if (Objects.nonNull(channelId)) {
-            return CHANNEL_GROUP.find(channelId);
+        // 遍历查找（低频操作，通常只在需要主动推送时使用）
+        for (Map.Entry<Channel, String> entry : CHANNEL_PARK_MAP.entrySet()) {
+            if (Objects.equals(entry.getValue(), parkCode)) {
+                return entry.getKey();
+            }
         }
-        throw new RuntimeException("Channel not found via parkCode");
+        // 修复 I5: 异常消息包含 parkCode 参数
+        throw new RuntimeException("Channel not found for parkCode: " + parkCode);
     }
 
     /**
      * 获取活跃连接数
      */
     public static int getActiveCount() {
-        return ACTIVE_CHANNELS.size();
+        return CHANNEL_PARK_MAP.size();
     }
 
     /**
      * 清空所有连接状态（仅用于测试）
      */
     public static void clearAll() {
-        ACTIVE_CHANNELS.clear();
-        ACTIVE_CHANNELS_INDEX.clear();
+        CHANNEL_PARK_MAP.clear();
         CHANNEL_GROUP.close().syncUninterruptibly();
     }
 }

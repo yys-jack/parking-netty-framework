@@ -22,6 +22,8 @@ public class MetricsAspect {
     private final ConcurrentMap<String, Counter> messageCounters = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Counter> messageFailureCounters = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Counter> timeoutCounters = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Timer> messageTimers = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Timer> authTimers = new ConcurrentHashMap<>();
 
     public MetricsAspect(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
@@ -34,8 +36,13 @@ public class MetricsAspect {
         authSuccessCounters
             .computeIfAbsent(parkCode, k -> meterRegistry.counter("parking_netty_auth_success_total", "park_code", k))
             .increment();
-        meterRegistry.timer("parking_netty_auth_duration_seconds", "park_code", parkCode)
-            .record((long) (durationSeconds * 1000), TimeUnit.MILLISECONDS);
+
+        // 使用缓存的 Timer，避免每次创建新对象
+        Timer timer = authTimers.computeIfAbsent(parkCode, k ->
+            meterRegistry.timer("parking_netty_auth_duration_seconds", "park_code", k)
+        );
+        timer.record((long) (durationSeconds * 1000), TimeUnit.MILLISECONDS);
+
         log.debug("Recorded auth success for parkCode: {}, duration: {}s", parkCode, durationSeconds);
     }
 
@@ -67,9 +74,12 @@ public class MetricsAspect {
                 .increment();
         }
 
-        meterRegistry.timer("parking_netty_message_duration_seconds",
-            "message_type", messageType, "park_code", parkCode)
-            .record((long) (durationSeconds * 1000), TimeUnit.MILLISECONDS);
+        // 使用缓存的 Timer，避免每次创建新对象
+        Timer timer = messageTimers.computeIfAbsent(key, k ->
+            meterRegistry.timer("parking_netty_message_duration_seconds",
+                "message_type", messageType, "park_code", parkCode)
+        );
+        timer.record((long) (durationSeconds * 1000), TimeUnit.MILLISECONDS);
     }
 
     /**
