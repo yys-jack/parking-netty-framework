@@ -4,14 +4,13 @@ import cn.tnar.parking.aspect.MetricsAspect;
 import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.Space;
 import cn.tnar.parking.model.Transmission;
-import cn.tnar.parking.repository.space.SpaceRepository;
+import cn.tnar.parking.repository.space.SpaceSnapshotAggregator;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -26,13 +25,13 @@ class SpaceHandlerTest {
 
     private SpaceHandler handler;
     private MetricsAspect metricsAspect;
-    private SpaceRepository spaceRepository;
+    private SpaceSnapshotAggregator snapshotAggregator;
 
     @BeforeEach
     void setUp() {
         metricsAspect = new MetricsAspect(new SimpleMeterRegistry());
-        spaceRepository = mock(SpaceRepository.class);
-        handler = new SpaceHandler(metricsAspect, spaceRepository);
+        snapshotAggregator = mock(SpaceSnapshotAggregator.class);
+        handler = new SpaceHandler(metricsAspect, snapshotAggregator);
     }
 
     @Test
@@ -58,8 +57,8 @@ class SpaceHandlerTest {
             })
             .verifyComplete();
 
-        // Verify saveSpaceSnapshot was called
-        verify(spaceRepository, times(1)).saveSpaceSnapshot(
+        // Verify addSnapshot was called
+        verify(snapshotAggregator, times(1)).addSnapshot(
             anyString(),
             anyInt(),
             anyInt(),
