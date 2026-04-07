@@ -30,3 +30,9 @@ Thumbs.db
 
 # Claude memory
 .claude/memory/
+
+# Personal docs
+docs/personal/
+
+# Worktrees
+.worktrees/
