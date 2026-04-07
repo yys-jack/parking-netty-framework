@@ -46,4 +46,11 @@ public final class RespondProto {
                 .setCode(Respond.RespondCode.CODE_MISMATCH)
                 .build();
     }
+
+    public static Respond busy() {
+        return Respond.newBuilder()
+                .setCode(Respond.RespondCode.CODE_BUSY)
+                .setMessage(ByteString.copyFromUtf8("服务器繁忙，请稍后重试"))
+                .build();
+    }
 }

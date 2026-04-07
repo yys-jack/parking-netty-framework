@@ -49,6 +49,7 @@ message Respond{
     CODE_NOT_SUPPORTED = 5; //暂不支持的功能
     CODE_OFFLINE       = 6; //云端内部使用
     CODE_TIMEOUT       = 7; //超时
+    CODE_BUSY          = 8; //服务器繁忙
   }
 
   RespondCode code    = 1; //响应码
