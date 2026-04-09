@@ -59,7 +59,7 @@ class AuthIntegrationTest {
 
         authRepository = new InMemoryAuthRepository(properties);
         authHandler = new AuthHandler(authRepository, metricsAspect);
-        dispatcherHandler = new DispatcherHandler(handlerRegistry, schedulerConfig, new IdempotencyGuard());
+        dispatcherHandler = new DispatcherHandler(handlerRegistry, schedulerConfig, new IdempotencyGuard(), metricsAspect);
     }
 
     @Test

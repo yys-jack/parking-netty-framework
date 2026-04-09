@@ -1,5 +1,6 @@
 package cn.tnar.parking.netty.handler;
 
+import cn.tnar.parking.aspect.MetricsAspect;
 import cn.tnar.parking.config.SchedulerConfig;
 import cn.tnar.parking.config.SchedulerProperties;
 import cn.tnar.parking.framework.IdempotencyGuard;
@@ -7,6 +8,7 @@ import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.Transmission;
 import cn.tnar.parking.netty.ChannelMaintainer;
 import cn.tnar.parking.task.HandlerRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,20 +37,22 @@ class DispatcherHandlerIdempotencyTest {
     @Mock
     private SchedulerProperties schedulerProperties;
 
+    private MetricsAspect metricsAspect;
     private AutoCloseable closeable;
 
     @BeforeEach
     void setUp() {
         closeable = MockitoAnnotations.openMocks(this);
 
-        // 创建真实的 IdempotencyGuard
+        // 创建真实的 IdempotencyGuard 和 MetricsAspect
         IdempotencyGuard idempotencyGuard = new IdempotencyGuard();
+        metricsAspect = new MetricsAspect(new SimpleMeterRegistry());
 
         // 模拟 Scheduler
         when(schedulerConfig.databaseScheduler(schedulerProperties))
             .thenReturn(reactor.core.scheduler.Schedulers.immediate());
 
-        dispatcherHandler = new DispatcherHandler(handlerRegistry, schedulerConfig, idempotencyGuard);
+        dispatcherHandler = new DispatcherHandler(handlerRegistry, schedulerConfig, idempotencyGuard, metricsAspect);
         channel = new EmbeddedChannel(dispatcherHandler);
 
         // 设置 parkCode
