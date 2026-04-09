@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 消息幂等性守卫
@@ -17,12 +18,18 @@ import java.util.concurrent.ConcurrentHashMap;
 public class IdempotencyGuard {
 
     private static final long WINDOW_MILLIS = 10_000; // 10 秒滑动窗口
+    private static final long CLEANUP_INTERVAL_MILLIS = 1_000; // 1 秒清理一次
 
     /**
      * Channel Attribute Key，存储已处理的消息 ID 缓存
      */
     private static final AttributeKey<ConcurrentHashMap<Integer, Long>> SEEN_MESSAGES_ATTR =
         AttributeKey.newInstance("seen_messages");
+
+    /**
+     * 全局清理时间戳（用于定期清理）
+     */
+    private static final AtomicLong lastCleanupTime = new AtomicLong(0);
 
     /**
      * 尝试获取消息处理权
@@ -36,19 +43,35 @@ public class IdempotencyGuard {
         ConcurrentHashMap<Integer, Long> seen = getOrCreateCache(channel);
 
         long now = System.currentTimeMillis();
+
+        // 定期清理：每秒清理一次，而非每次调用都清理
+        if (now - lastCleanupTime.get() > CLEANUP_INTERVAL_MILLIS) {
+            cleanupExpired(seen, now);
+            lastCleanupTime.set(now);
+        }
+
+        // 检查是否重复（只检查当前消息 ID 是否在窗口内）
         long cutoff = now - WINDOW_MILLIS;
-
-        // 滑动窗口清理：移除超过 10 秒的记录
-        seen.values().removeIf(ts -> ts < cutoff);
-
-        // 尝试放入新记录，返回 null 表示第一次见到此 ID
         Long existingTs = seen.putIfAbsent(messageId, now);
         if (existingTs != null) {
-            // 重复消息
-            log.debug("[IDEMPOTENCY] Duplicate message detected: parkCode={}, messageId={}", parkCode, messageId);
-            return false;
+            // 如果时间戳在窗口内，则是重复消息
+            if (existingTs >= cutoff) {
+                log.debug("[IDEMPOTENCY] Duplicate message detected: parkCode={}, messageId={}", parkCode, messageId);
+                return false;
+            } else {
+                // 时间戳已过期，覆盖它
+                seen.put(messageId, now);
+            }
         }
         return true;
+    }
+
+    /**
+     * 清理过期的消息记录
+     */
+    private void cleanupExpired(ConcurrentHashMap<Integer, Long> seen, long now) {
+        long cutoff = now - WINDOW_MILLIS;
+        seen.values().removeIf(ts -> ts < cutoff);
     }
 
     /**
