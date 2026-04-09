@@ -9,6 +9,8 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -126,5 +128,94 @@ class IdempotencyGuardTest {
 
         // Assert
         assertEquals(2, count);
+    }
+
+    @Test
+    void concurrentAccess_shouldBeThreadSafe() throws InterruptedException {
+        // Arrange
+        String parkCode = "PARK001";
+        int messageId = 100;
+        int threadCount = 10;
+        CountDownLatch latch = new CountDownLatch(threadCount);
+        AtomicInteger successCount = new AtomicInteger(0);
+
+        // 使用真实的 ConcurrentHashMap 而非 Mock，因为 Mock 不是线程安全的
+        ConcurrentHashMap<Integer, Long> realCache = new ConcurrentHashMap<>();
+        Channel realChannel = new io.netty.channel.embedded.EmbeddedChannel();
+        realChannel.attr(IdempotencyGuard.SEEN_MESSAGES_ATTR).set(realCache);
+
+        // Act - 多线程并发调用 tryAcquire
+        for (int i = 0; i < threadCount; i++) {
+            new Thread(() -> {
+                boolean result = idempotencyGuard.tryAcquire(realChannel, parkCode, messageId);
+                if (result) {
+                    successCount.incrementAndGet();
+                }
+                latch.countDown();
+            }).start();
+        }
+
+        // Wait for all threads to complete
+        latch.await();
+
+        // Assert - 只有一个线程应该成功
+        assertEquals(1, successCount.get(), "只有第一个线程应该成功");
+        assertEquals(1, realCache.size(), "缓存中只应有一条记录");
+
+        // Cleanup
+        realChannel.close();
+    }
+
+    @Test
+    void windowBoundary_exactTimeout_shouldPass() {
+        // Arrange
+        String parkCode = "PARK001";
+        int messageId = 100;
+
+        // 手动添加一条恰好在窗口边界的记录（10 秒前）
+        // 注意：由于实现使用 >= 判断，10 秒整的消息仍在窗口内
+        // 所以这个测试预期是：10 秒整的消息被视为重复
+        long exactBoundaryTimestamp = System.currentTimeMillis() - 10_000;
+        testCache.put(messageId, exactBoundaryTimestamp);
+
+        // Act - 恰好在边界上的消息被视为重复
+        boolean result = idempotencyGuard.tryAcquire(mockChannel, parkCode, messageId);
+
+        // Assert - 10 秒整的消息仍在窗口内，应被拒绝
+        assertFalse(result, "恰好 10 秒的消息仍在窗口内，应被拒绝");
+    }
+
+    @Test
+    void windowBoundary_beyondTimeout_shouldPass() {
+        // Arrange
+        String parkCode = "PARK001";
+        int messageId = 100;
+
+        // 手动添加一条超出窗口边界的记录（10.1 秒前）
+        long beyondBoundaryTimestamp = System.currentTimeMillis() - 10_100;
+        testCache.put(messageId, beyondBoundaryTimestamp);
+
+        // Act - 超出边界的消息应该允许通过
+        boolean result = idempotencyGuard.tryAcquire(mockChannel, parkCode, messageId);
+
+        // Assert
+        assertTrue(result, "超出窗口边界的消息应该允许重新发送");
+    }
+
+    @Test
+    void windowBoundary_justInside_shouldFail() {
+        // Arrange
+        String parkCode = "PARK001";
+        int messageId = 100;
+
+        // 手动添加一条在窗口内但接近边界的记录（9.9 秒前）
+        long justInsideTimestamp = System.currentTimeMillis() - 9_900;
+        testCache.put(messageId, justInsideTimestamp);
+
+        // Act - 窗口内的消息应该被拒绝
+        boolean result = idempotencyGuard.tryAcquire(mockChannel, parkCode, messageId);
+
+        // Assert
+        assertFalse(result, "窗口内的重复消息应该被拒绝");
     }
 }

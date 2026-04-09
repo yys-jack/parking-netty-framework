@@ -22,8 +22,9 @@ public class IdempotencyGuard {
 
     /**
      * Channel Attribute Key，存储已处理的消息 ID 缓存
+     * Package-private for testing
      */
-    private static final AttributeKey<ConcurrentHashMap<Integer, Long>> SEEN_MESSAGES_ATTR =
+    static final AttributeKey<ConcurrentHashMap<Integer, Long>> SEEN_MESSAGES_ATTR =
         AttributeKey.newInstance("seen_messages");
 
     /**
