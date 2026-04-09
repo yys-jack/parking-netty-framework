@@ -608,17 +608,31 @@ t=15s: 客户端重发 ID=100 → 服务端处理成功（已超出窗口）
 open build/reports/tests/test/index.html
 ```
 
-测试覆盖：
-- `RespondProtoTest` - 响应工厂测试
-- `HandlerRegistryTest` - Handler 注册表测试
-- `ChannelMaintainerTest` - Channel 管理测试
-- `OperationResultFutureTest` - 异步 Future 测试
-- `SpaceHandlerTest`, `CarInHandlerTest`, `CarOutHandlerTest`, `DemoHandlerTest` - Handler 单元测试
-- `AuthIntegrationTest` - 认证集成测试
-- `InMemoryAuthRepositoryTest`, `RedisAuthRepositoryTest`, `JdbcAuthRepositoryTest` - Repository 测试
-- `AuthRefreshControllerTest` - REST API 测试
+### 测试覆盖
 
-**总计**: 43 个测试，100% 通过率
+| 测试类别 | 测试类 | 说明 |
+|----------|--------|------|
+| **核心框架** | `RespondProtoTest` | 响应工厂测试 |
+| | `HandlerRegistryTest` | Handler 注册表测试 |
+| | `ChannelMaintainerTest` | Channel 管理测试 |
+| | `OperationResultFutureTest` | 异步 Future 测试 |
+| **Handler 测试** | `SpaceHandlerTest` | 车位上报 Handler |
+| | `CarInHandlerTest` | 车辆入场 Handler |
+| | `CarOutHandlerTest` | 车辆出场 Handler |
+| | `DemoHandlerTest` | 演示 Handler |
+| | `AuthHandlerTest` | 认证 Handler |
+| **Repository 测试** | `InMemoryAuthRepositoryTest` | 内存认证存储 |
+| | `RedisAuthRepositoryTest` | Redis 认证存储 |
+| | `JdbcAuthRepositoryTest` | JDBC 认证存储 |
+| | `JdbcSpaceRepositoryTest` | JDBC 车位存储 |
+| **幂等性测试** | `IdempotencyGuardTest` | 滑动窗口去重（9 个测试） |
+| | `DispatcherHandlerIdempotencyTest` | 幂等拦截集成测试 |
+| **监控指标测试** | `MetricsAspectDuplicateTest` | 重复消息指标 |
+| | `MetricsAspectTest` | 指标收集切面 |
+| **集成测试** | `AuthIntegrationTest` | 认证集成测试 |
+| **Web 控制器测试** | `AuthRefreshControllerTest` | 缓存刷新 API |
+
+**总计**: 60+ 个测试，100% 通过率
 
 ## 依赖
 
