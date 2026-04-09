@@ -430,11 +430,26 @@ curl -X POST -H "X-Admin-Token: your-token" http://localhost:8080/api/auth/refre
 
 ### 线程池配置
 
-| 线程池 | 用途 | 核心线程 | 最大线程 | 队列容量 | 拒绝策略 |
-|--------|------|----------|----------|----------|----------|
-| **databaseScheduler** | Handler 业务逻辑 + JDBC 数据库操作 | 10 | 20 | 1000 | CallerRuns |
-| **externalScheduler** | 外部 API 调用（预留） | 5 | 10 | 500 | CallerRuns |
-| **cpuScheduler** | CPU 密集型计算（预留） | CPU 核心数 | CPU 核心数×2 | - | - |
+| 线程池 | 用途 | 核心线程 | 最大线程 | 队列容量 | 空闲超时 | 拒绝策略 |
+|--------|------|----------|----------|----------|----------|----------|
+| **databaseScheduler** | Handler 业务逻辑 + JDBC 数据库操作 | 10 | 20 | 1000 | 60s | CallerRuns |
+| **externalScheduler** | 外部 API 调用（预留） | 5 | 10 | 500 | 30s | CallerRuns |
+| **cpuScheduler** | CPU 密集型计算（预留） | CPU 核心数 | CPU 核心数×2 | - | - | - |
+
+**配置方式** (`application.yml`):
+```yaml
+scheduler:
+  database:
+    core-threads: 10      # 核心线程数
+    max-threads: 20       # 最大线程数
+    queue-capacity: 1000  # 队列容量
+    timeout-seconds: 10   # 任务超时时间
+```
+
+**监控指标**:
+- `scheduler_pool_size` - 线程池大小
+- `scheduler_active_threads` - 活跃线程数
+- `scheduler_queue_size` - 队列等待任务数
 
 ### 过载保护
 
