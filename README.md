@@ -22,6 +22,7 @@
 - **消息自动分派** - 基于消息类型的 Handler 路由机制
 - **响应式架构** - 基于 Project Reactor，Handler 返回 `Mono<Respond>`
 - **分层调度器** - 数据库/外部 API/CPU 计算隔离，支持超时控制
+- **消息幂等性** - 基于滑动窗口的消息去重，防止重复处理
 - **监控报警系统** - Micrometer + Prometheus + Grafana，实时监控连接数、认证、业务指标
 - **分层测试体系** - 快速测试 → 完整测试 → Docker 测试
 - **代码质量保障** - JaCoCo 覆盖率 + Checkstyle 代码风格检查
@@ -44,7 +45,8 @@ parking-netty-framework/
 │   │   ├── SchedulerProperties.java   # 调度器配置属性
 │   │   └── SchedulerMetrics.java      # 调度器指标监控
 │   ├── framework/                     # 框架核心
-│   │   └── AbstractHandler.java       # 抽象处理器基类（响应式）
+│   │   ├── AbstractHandler.java       # 抽象处理器基类（响应式）
+│   │   └── IdempotencyGuard.java      # 消息幂等性守卫（滑动窗口去重）
 │   ├── netty/                         # Netty 核心
 │   │   ├── ApiServer.java             # Netty 服务器
 │   │   ├── ChannelMaintainer.java     # Channel 管理器
@@ -122,6 +124,7 @@ parking-netty-framework/
 7. **配置驱动** - 认证信息通过 auth.yml 配置，支持热更新
 8. **AbstractHandler** - 统一的处理器基类，提供日志和异常处理
 9. **Spring Boot 集成** - 支持 Spring Boot 自动配置和依赖注入
+10. **消息幂等性** - 基于滑动窗口的消息去重，防止重复处理
 
 ## 快速开始
 
@@ -523,11 +526,12 @@ Netty 的 IO 线程（EventLoop）非常宝贵，如果在 IO 线程中直接执
 |--------|-----|------|
 | CODE_SUCCESS | 1 | 成功 |
 | CODE_FAILURE | 2 | 失败 |
-| CODE_DUPLICATE | 3 | 重复 |
+| CODE_DUPLICATE | 3 | 重复（消息幂等性） |
 | CODE_MISMATCH | 4 | 不匹配 |
 | CODE_NOT_SUPPORTED | 5 | 暂不支持 |
 | CODE_OFFLINE | 6 | 离线 |
 | CODE_TIMEOUT | 7 | 超时 |
+| CODE_BUSY | 8 | 服务器繁忙 |
 
 ## 通信协议
 
@@ -558,6 +562,41 @@ message Transmission {
   bytes       message = 3; // 具体消息序列化后的字节
 }
 ```
+
+## 消息幂等性
+
+### 机制说明
+
+防止同一 TCP 连接内重复消息导致的业务异常：
+
+| 维度 | 要求 |
+|------|------|
+| **范围** | 同一 TCP 连接 |
+| **判重键** | `(parkCode, messageId)` 组合 |
+| **时间窗口** | 10 秒滑动窗口 |
+| **重复响应** | `CODE_DUPLICATE` |
+
+### 工作原理
+
+```
+t=0s:  客户端发送 ID=100 → 服务端处理成功
+t=5s:  客户端重发 ID=100 → 返回 CODE_DUPLICATE
+t=15s: 客户端重发 ID=100 → 服务端处理成功（已超出窗口）
+```
+
+### 技术实现
+
+- **IdempotencyGuard**: 使用 Channel Attribute 存储已处理消息 ID
+- **DispatcherHandler**: 在消息入口处拦截重复消息
+- **滑动窗口清理**: 每 1 秒清理过期记录，避免内存泄漏
+- **并发安全**: ConcurrentHashMap.putIfAbsent() 原子操作
+
+### 监控指标
+
+- `parking_netty_duplicates_total` - 重复消息计数
+- 标签：`message_type`, `park_code`
+
+详细文档：[DEVELOPMENT.md#5.7-消息幂等性](docs/DEVELOPMENT.md#5.7-消息幂等性)
 
 ## 单元测试
 
