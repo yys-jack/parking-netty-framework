@@ -659,6 +659,15 @@ t=5s: 发送 ID=100 → 返回 CODE_DUPLICATE
 t=15s: 发送 ID=100 → 成功处理（已超出 10 秒窗口）
 ```
 
+**核心类**:
+- `IdempotencyGuard` - 幂等性守卫，使用 Channel Attribute 存储缓存
+- `DispatcherHandler` - 在 `channelRead0()` 入口拦截重复消息
+
+**注意事项**:
+1. 消息 ID 由客户端生成，确保同一请求不重复使用 ID
+2. 连接断开后缓存自动清理，重连后允许重新发送历史 ID
+3. 高并发场景下，清理频率为 1 秒/次，避免性能开销
+
 ---
 
 ## 6. 测试

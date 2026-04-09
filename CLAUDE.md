@@ -80,7 +80,8 @@ git worktree remove feature/xxx                   # 完成后删除
 | 消息类型 | DEVELOPMENT.md#5.2 | Redis 配置 | PRODUCTION_DEPLOYMENT.md#3 |
 | 响应式编程 | DEVELOPMENT.md#5.4 | 单元测试 | TESTING.md#6.1 |
 | Docker 部署 | DOCKER_DEPLOYMENT.md | 监控 | MONITORING.md |
-| 故障排查 | DEVELOPMENT.md#8 | 完整文档 | 见下方列表 |
+| 故障排查 | DEVELOPMENT.md#8 | 消息幂等性 | DEVELOPMENT.md#5.7 |
+| 完整文档 | 见下方列表 |
 
 ---
 
