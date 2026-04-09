@@ -54,7 +54,7 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
 
         // ========== 幂等性检查 ==========
         if (!idempotencyGuard.tryAcquire(ctx.channel(), parkCode, msg.getID())) {
-            log.warn("[DUPLICATE] parkCode={}, type={}, id={}", parkCode, msg.getType(), msg.getID());
+            log.info("[DUPLICATE] parkCode={}, type={}, id={}", parkCode, msg.getType(), msg.getID());
             metricsAspect.recordDuplicate(msg.getType().name(), parkCode);
             // 直接返回 CODE_DUPLICATE，不调用下游 Handler
             Respond duplicateRespond = RespondProto.duplicate("重复的消息 ID");
