@@ -623,6 +623,44 @@ meterRegistry.timer("custom_duration_seconds", "tag_key", "tag_value")
 meterRegistry.gauge("custom_gauge", object, obj -> obj.getValue());
 ```
 
+### 5.7 消息幂等性
+
+消息幂等性由 `IdempotencyGuard` 实现，基于滑动窗口去重：
+
+| 维度 | 要求 |
+|------|------|
+| **范围** | 同一 TCP 连接 |
+| **判重键** | `(parkCode, messageId)` 组合 |
+| **时间窗口** | 10 秒滑动窗口 |
+| **重复响应** | `CODE_DUPLICATE` |
+
+**使用方式**:
+```java
+// IdempotencyGuard 自动在 DispatcherHandler 层拦截
+// Handler 无需关心幂等性逻辑
+```
+
+**响应码**:
+```protobuf
+enum RespondCode {
+  CODE_DUPLICATE = 3;  // 重复的消息
+  // ... 其他响应码
+}
+```
+
+**监控指标**:
+- `parking_netty_duplicates_total` - 重复消息计数
+- 标签：`message_type`, `park_code`
+
+**示例**: 客户端发送相同 ID 的消息
+```
+t=0s: 发送 ID=100 → 成功处理
+t=5s: 发送 ID=100 → 返回 CODE_DUPLICATE
+t=15s: 发送 ID=100 → 成功处理（已超出 10 秒窗口）
+```
+
+---
+
 ## 6. 测试
 
 ### 6.1 单元测试

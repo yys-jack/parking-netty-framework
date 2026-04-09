@@ -34,6 +34,13 @@ class RespondProtoTest {
     }
 
     @Test
+    void testDuplicate_withMessage() {
+        Respond respond = RespondProto.duplicate("重复的消息 ID");
+        assertEquals(Respond.RespondCode.CODE_DUPLICATE, respond.getCode());
+        assertEquals("重复的消息 ID", respond.getMessage().toStringUtf8());
+    }
+
+    @Test
     void testMismatch() {
         Respond respond = RespondProto.mismatch();
         assertEquals(Respond.RespondCode.CODE_MISMATCH, respond.getCode());

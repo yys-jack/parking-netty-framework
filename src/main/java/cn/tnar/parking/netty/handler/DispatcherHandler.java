@@ -1,6 +1,8 @@
 package cn.tnar.parking.netty.handler;
 
+import cn.tnar.parking.aspect.MetricsAspect;
 import cn.tnar.parking.config.SchedulerConfig;
+import cn.tnar.parking.framework.IdempotencyGuard;
 import cn.tnar.parking.model.Respond;
 import cn.tnar.parking.model.RespondProto;
 import cn.tnar.parking.model.Transmission;
@@ -30,19 +32,41 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
 
     private final HandlerRegistry handlerRegistry;
     private final Scheduler databaseScheduler;
+    private final IdempotencyGuard idempotencyGuard;
+    private final MetricsAspect metricsAspect;
     private static final int TIMEOUT_SECONDS = 10;
 
     public DispatcherHandler(
         HandlerRegistry handlerRegistry,
-        SchedulerConfig schedulerConfig) {
+        SchedulerConfig schedulerConfig,
+        IdempotencyGuard idempotencyGuard,
+        MetricsAspect metricsAspect) {
         this.handlerRegistry = handlerRegistry;
         this.databaseScheduler = schedulerConfig.databaseScheduler(schedulerConfig.databaseSchedulerProperties());
+        this.idempotencyGuard = idempotencyGuard;
+        this.metricsAspect = metricsAspect;
     }
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Transmission msg) throws Exception {
         String parkCode = ctx.channel().attr(ChannelMaintainer.PARK_CODE_ATTR).get();
         log.debug("[MSG_IN] parkCode={}, type={}, id={}", parkCode, msg.getType(), msg.getID());
+
+        // ========== 幂等性检查 ==========
+        if (!idempotencyGuard.tryAcquire(ctx.channel(), parkCode, msg.getID())) {
+            log.info("[DUPLICATE] parkCode={}, type={}, id={}", parkCode, msg.getType(), msg.getID());
+            metricsAspect.recordDuplicate(msg.getType().name(), parkCode);
+            // 直接返回 CODE_DUPLICATE，不调用下游 Handler
+            Respond duplicateRespond = RespondProto.duplicate("重复的消息 ID");
+            Transmission response = Transmission.newBuilder()
+                .setID(msg.getID())
+                .setType(Transmission.MessageType.TYPE_RESPOND)
+                .setMessage(duplicateRespond.toByteString())
+                .build();
+            ctx.channel().writeAndFlush(response);
+            return;
+        }
+        // ===============================
 
         if (!Transmission.MessageType.TYPE_RESPOND.equals(msg.getType())) {
             Handler handler = handlerRegistry.getHandler(msg.getType());
@@ -106,6 +130,8 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        // 清理幂等缓存，防止内存泄漏
+        idempotencyGuard.cleanup(ctx.channel());
         ChannelMaintainer.remove(ctx.channel());
     }
 

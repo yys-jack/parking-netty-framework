@@ -24,6 +24,7 @@ public class MetricsAspect {
     private final ConcurrentMap<String, Counter> timeoutCounters = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Timer> messageTimers = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Timer> authTimers = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Counter> duplicateCounters = new ConcurrentHashMap<>();
 
     public MetricsAspect(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
@@ -91,5 +92,17 @@ public class MetricsAspect {
                 "message_type", messageType, "park_code", parkCode))
             .increment();
         log.debug("Recorded timeout for messageType: {}, parkCode: {}", messageType, parkCode);
+    }
+
+    /**
+     * 记录重复消息事件
+     */
+    public void recordDuplicate(String messageType, String parkCode) {
+        String key = messageType + ":" + parkCode;
+        duplicateCounters
+            .computeIfAbsent(key, k -> meterRegistry.counter("parking_netty_duplicates_total",
+                "message_type", messageType, "park_code", parkCode))
+            .increment();
+        log.debug("Recorded duplicate message: messageType={}, parkCode={}", messageType, parkCode);
     }
 }
