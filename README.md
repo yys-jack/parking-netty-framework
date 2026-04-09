@@ -436,6 +436,18 @@ curl -X POST -H "X-Admin-Token: your-token" http://localhost:8080/api/auth/refre
 | **externalScheduler** | 外部 API 调用（预留） | 5 | 10 | 500 | CallerRuns |
 | **cpuScheduler** | CPU 密集型计算（预留） | CPU 核心数 | CPU 核心数×2 | - | - |
 
+### 过载保护
+
+当线程池队列满时，新请求返回 `CODE_BUSY` 响应码，防止系统崩溃：
+
+```protobuf
+enum RespondCode {
+  CODE_BUSY = 8;  // 服务器繁忙，请稍后重试
+}
+```
+
+详细设计：[线程池过载保护设计](docs/superpowers/specs/2026-04-07-threadpool-overload-protection-design.md)
+
 ### 消息处理流程
 
 ```mermaid
@@ -470,20 +482,28 @@ sequenceDiagram
     Client->>Worker: 13. 发送车位上报消息
     Note over Worker: DispatcherHandler.channelRead0()
     Note over Worker: 获取 parkCode<br/>从 Channel 属性
-    Worker->>Worker: 14. handler.handle()<br/>返回 Mono<Respond>
+    rect rgb(255, 250, 230)
+        Note over Worker: ★ 幂等性检查
+        Worker->>Worker: 14. IdempotencyGuard.tryAcquire()
+        alt 重复消息
+            Worker-->>Client: 返回 CODE_DUPLICATE
+        else 新消息
+            Worker->>Worker: 15. handler.handle()<br/>返回 Mono<Respond>
+        end
+    end
     
     rect rgb(230, 240, 250)
         Note over Worker,DB: ★ 关键：切换到数据库线程池
-        Worker->>DB: 15. .subscribeOn(databaseScheduler)<br/>订阅切换到 DB 线程
+        Worker->>DB: 16. .subscribeOn(databaseScheduler)<br/>订阅切换到 DB 线程
         Note over DB: Handler 业务逻辑执行<br/>Repository 数据库操作
-        DB->>DBRepo: 16. JDBC 数据库操作
-        DBRepo-->>DB: 17. 返回查询结果
-        DB->>DB: 18. .publishOn(Schedulers.immediate())<br/>切换回当前线程
+        DB->>DBRepo: 17. JDBC 数据库操作
+        DBRepo-->>DB: 18. 返回查询结果
+        DB->>DB: 19. .publishOn(Schedulers.immediate())<br/>切换回当前线程
     end
     
-    DB->>Worker: 19. subscribe 回调执行
-    Worker->>Worker: 20. ctx.executor().execute()<br/>确保在 EventLoop 执行
-    Worker->>Client: 21. ctx.channel().writeAndFlush()<br/>经过 ProtobufEncoder
+    DB->>Worker: 20. subscribe 回调执行
+    Worker->>Worker: 21. ctx.executor().execute()<br/>确保在 EventLoop 执行
+    Worker->>Client: 22. ctx.channel().writeAndFlush()<br/>经过 ProtobufEncoder
 
     Note over Client,Micrometer: 阶段 4: 监控指标
     Micrometer->>DB: Gauge: scheduler_pool_size
@@ -497,6 +517,7 @@ sequenceDiagram
 |------|------|------|
 | **连接建立** | Boss → Worker | Boss 只负责 accept，IO 操作交给 Worker |
 | **认证阶段** | Worker 线程直接执行 | 认证是轻量级操作，直接在工作线程执行 JDBC |
+| **幂等性检查** | Worker 线程 | 在 EventLoop 线程执行，零开销 |
 | **业务消息** | Worker → databaseScheduler → Worker | 通过 `subscribeOn()` 切换到 DB 线程池，处理后通过 `publishOn()` 切回 |
 | **响应发送** | Worker 线程 | 必须回到 EventLoop 线程，确保经过 Pipeline 编码器 |
 
