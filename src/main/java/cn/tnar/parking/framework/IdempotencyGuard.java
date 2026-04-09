@@ -70,4 +70,11 @@ public class IdempotencyGuard {
         ConcurrentHashMap<Integer, Long> seen = channel.attr(SEEN_MESSAGES_ATTR).get();
         return seen != null ? seen.size() : 0;
     }
+
+    /**
+     * 清理 Channel 的幂等缓存（在 Channel 关闭时调用，防止内存泄漏）
+     */
+    public void cleanup(Channel channel) {
+        channel.attr(SEEN_MESSAGES_ATTR).set(null);
+    }
 }

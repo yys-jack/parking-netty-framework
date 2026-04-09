@@ -130,6 +130,8 @@ public class DispatcherHandler extends SimpleChannelInboundHandler<Transmission>
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        // 清理幂等缓存，防止内存泄漏
+        idempotencyGuard.cleanup(ctx.channel());
         ChannelMaintainer.remove(ctx.channel());
     }
 
