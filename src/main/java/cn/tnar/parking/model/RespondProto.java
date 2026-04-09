@@ -41,6 +41,18 @@ public final class RespondProto {
                 .build();
     }
 
+    /**
+     * 创建重复消息响应
+     * @param message 错误描述
+     * @return 包含 CODE_DUPLICATE 的响应
+     */
+    public static Respond duplicate(String message) {
+        return Respond.newBuilder()
+                .setCode(Respond.RespondCode.CODE_DUPLICATE)
+                .setMessage(com.google.protobuf.ByteString.copyFromUtf8(message))
+                .build();
+    }
+
     public static Respond mismatch() {
         return Respond.newBuilder()
                 .setCode(Respond.RespondCode.CODE_MISMATCH)
